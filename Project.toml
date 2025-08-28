@@ -1,0 +1,16 @@
+name = "GraphEpimodels"
+uuid = "550e1e89-e91b-4a9b-82ac-1b2c123456ab"
+version = "0.1.0"
+authors = ["Samuel Modée", "Stein Andreas Bethuelsen", "Erik Broman"]
+
+[deps]
+Random = "9a3f8284-a2c9-5f02-9a11-845980a1fd5c"
+
+[compat]
+julia = "1.6"
+
+[extras]
+Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
+
+[targets]
+test = ["Test"]
