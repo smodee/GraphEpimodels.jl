@@ -6,6 +6,7 @@ boundary conditions, parameter validation, and random number generation.
 """
 
 using Random
+using Statistics  # For mean() function
 
 # =============================================================================
 # Coordinate Conversion Utilities (1-indexed for Julia)
@@ -327,7 +328,7 @@ macro time_it(description, expr)
         local start_time = time()
         local result = $(esc(expr))
         local elapsed = time() - start_time
-        println("$($description) took $(elapsed:.4f)s")
+        println("$($description) took $(round(elapsed, digits=4))s")
         result
     end
 end

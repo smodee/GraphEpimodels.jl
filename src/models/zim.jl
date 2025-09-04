@@ -18,8 +18,9 @@ using Random
 using ..GraphEpimodels: EpidemicProcess, SIRLikeProcess, SquareLattice
 using ..GraphEpimodels: NodeState, SUSCEPTIBLE, INFECTED, REMOVED
 using ..GraphEpimodels: GillespieScheduler, PerformanceScheduler, gillespie_step
-using ..GraphEpimodels: get_nodes_in_state, count_neighbors_by_state
-using ..GraphEpimodels: validate_epidemic_parameters, create_rng
+using ..GraphEpimodels: get_nodes_in_state, count_neighbors_by_state, get_neighbors
+using ..GraphEpimodels: validate_epidemic_parameters, create_rng, compute_survival_probability
+using ..GraphEpimodels: create_square_lattice, get_center_node, get_random_nodes
 
 # =============================================================================
 # ZIM Process Implementation
@@ -299,7 +300,6 @@ function estimate_survival_probability(process::ZIMProcess, initial_infected::Ve
     end
     
     # Compute statistics
-    using ..GraphEpimodels: compute_survival_probability
     survival_prob, survival_se = compute_survival_probability(survival_outcomes)
     
     return Dict{Symbol, Any}(
@@ -344,7 +344,6 @@ function create_zim_simulation(width::Int, height::Int, λ::Float64, μ::Float64
                               rng_seed::Union{Int, Nothing} = nothing)::ZIMProcess
     
     # Create lattice
-    using ..GraphEpimodels: create_square_lattice
     lattice = create_square_lattice(width, height, boundary)
     
     # Create RNG
