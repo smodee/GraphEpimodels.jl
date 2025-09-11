@@ -39,17 +39,6 @@ using Random
 export Random
 
 # =============================================================================
-# Analysis Tools  
-# =============================================================================
-
-# Visualization
-include("analysis/visualization.jl")
-export LatticeVisualizer, visualize_state
-export plot_state, plot_comparison, plot_spread_pattern, set_color_scheme!
-export plot_survival_curve, plot_phase_diagram
-export quick_plot, save_plot, save_visualization_demo, setup_publication_plots
-
-# =============================================================================
 # Core Framework
 # =============================================================================
 
@@ -106,6 +95,17 @@ export ZIMProcess
 export has_escaped, get_zim_statistics
 export estimate_survival_probability
 export create_zim_simulation, run_survival_analysis
+
+# =============================================================================
+# Analysis Tools  
+# =============================================================================
+
+# Visualization
+include("analysis/visualization.jl")
+export LatticeVisualizer, visualize_state
+export plot_state, plot_comparison, plot_spread_pattern, set_color_scheme!
+export plot_survival_curve, plot_phase_diagram
+export quick_plot, save_plot, save_visualization_demo, setup_publication_plots
 
 # =============================================================================
 # Package Information and Convenience Functions

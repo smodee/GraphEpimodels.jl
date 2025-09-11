@@ -53,7 +53,7 @@ boundary highlighting, and support for publication-ready figures.
 """
 mutable struct LatticeVisualizer
     color_scheme::Symbol
-    colors::Dict{Symbol, Colorant}
+    colors::Dict{Symbol, Any}  # Changed from Colorant to Any to allow strings
     figsize::Tuple{Int, Int}
     
     function LatticeVisualizer(color_scheme::Symbol = :zim, figsize::Tuple{Int, Int} = (800, 800))
@@ -95,7 +95,6 @@ Plot the current state of an epidemic process on a lattice.
 - `process::EpidemicProcess`: Epidemic process to visualize (must have SquareLattice)
 - `title::Union{String, Nothing}`: Plot title (auto-generated if nothing)
 - `show_boundary::Bool`: Whether to highlight boundary nodes (default: true)
-- `show_colorbar::Bool`: Whether to show color legend (default: true)
 
 # Returns
 - `Plots.Plot`: The plot object
@@ -110,8 +109,7 @@ julia> display(p)
 function plot_state(visualizer::LatticeVisualizer, 
                    process::EpidemicProcess;
                    title::Union{String, Nothing} = nothing,
-                   show_boundary::Bool = true,
-                   show_colorbar::Bool = true)
+                   show_boundary::Bool = true)
     
     if !isa(get_graph(process), SquareLattice)
         throw(ArgumentError("plot_state requires a SquareLattice graph"))
@@ -134,8 +132,7 @@ function plot_state(visualizer::LatticeVisualizer,
                size = visualizer.figsize,
                showaxis = false,
                grid = false,
-               colorbar = show_colorbar,
-               colorbar_title = show_colorbar ? "State" : "")
+               colorbar = false)
     
     # Set title
     if title === nothing
@@ -211,10 +208,7 @@ function plot_comparison(visualizer::LatticeVisualizer,
     # Create individual plots
     plots = []
     for i in 1:n_plots
-        show_cbar = (i == 1)  # Only show colorbar on first plot
-        p = plot_state(visualizer, processes[i];
-                      title = titles[i],
-                      show_colorbar = show_cbar)
+        p = plot_state(visualizer, processes[i]; title = titles[i])
         push!(plots, p)
     end
     
