@@ -1,52 +1,62 @@
 """
-Square lattice implementation optimized for epidemic simulations.
+High-performance square lattice implementation for epidemic modeling.
 
-This module provides high-performance square lattices with different boundary
-conditions, optimized for large-scale stochastic simulations on Z².
+Optimized for large-scale simulations with efficient neighbor lookups,
+coordinate conversions, and boundary handling. Uses primitive Int8 states
+for maximum performance.
 """
 
 using Random
-using ..GraphEpimodels: EpidemicGraph, NodeState, BoundaryCondition
-using ..GraphEpimodels: SUSCEPTIBLE, INFECTED, REMOVED, ABSORBING, PERIODIC
-using ..GraphEpimodels: coord_to_index, index_to_coord, apply_periodic_boundary
-using ..GraphEpimodels: is_absorbing_boundary, get_boundary_indices
-using ..GraphEpimodels: validate_lattice_size
+
+# Import the graph interface
+# include("graphs.jl")  # Assumes graphs.jl is loaded first
 
 # =============================================================================
-# Square Lattice Implementation
+# Boundary Condition Types
+# =============================================================================
+
+@enum BoundaryCondition ABSORBING PERIODIC
+
+# =============================================================================
+# High-Performance Square Lattice
 # =============================================================================
 
 """
-High-performance square lattice for epidemic simulations.
+Optimized square lattice implementation for epidemic simulations.
 
-Supports different boundary conditions and provides fast neighbor lookups
-optimized for epidemic processes on Z².
+Uses efficient coordinate arithmetic and pre-computed boundary node lists.
+All state operations use primitive Int8 arrays for maximum performance.
 
 # Fields
-- `width::Int`: Width of the lattice (number of columns)
-- `height::Int`: Height of the lattice (number of rows)  
+- `width::Int`: Number of columns
+- `height::Int`: Number of rows  
 - `boundary::BoundaryCondition`: Boundary condition type
-- `states::Vector{NodeState}`: Current state of each node
-- `boundary_nodes::Vector{Int}`: Pre-computed boundary node indices
+- `states::Vector{Int8}`: Node states (primitive array)
+- `boundary_nodes::Vector{Int}`: Pre-computed boundary node indices (for absorbing)
 """
-mutable struct SquareLattice <: EpidemicGraph
+mutable struct SquareLattice <: AbstractEpidemicGraph
     width::Int
     height::Int
     boundary::BoundaryCondition
-    states::Vector{NodeState}
-    boundary_nodes::Vector{Int}
+    states::Vector{Int8}
+    boundary_nodes::Vector{Int}  # Pre-computed for efficiency
     
     function SquareLattice(width::Int, height::Int, boundary::BoundaryCondition = ABSORBING)
-        validate_lattice_size(height, width)
+        if width < 1 || height < 1
+            throw(ArgumentError("Lattice dimensions must be positive"))
+        end
+        if width > 50_000 || height > 50_000
+            throw(ArgumentError("Lattice dimensions too large (>50,000)"))
+        end
         
-        num_nodes = width * height
-        states = fill(SUSCEPTIBLE, num_nodes)
+        n_nodes = width * height
+        states = zeros(Int8, n_nodes)  # All start SUSCEPTIBLE
         
         # Pre-compute boundary nodes for absorbing boundaries
         boundary_nodes = if boundary == ABSORBING
-            get_boundary_indices(height, width)
+            _compute_boundary_nodes(width, height)
         else
-            Int[]  # No boundary nodes for periodic
+            Int[]  # No boundary concept for periodic
         end
         
         new(width, height, boundary, states, boundary_nodes)
@@ -54,195 +64,146 @@ mutable struct SquareLattice <: EpidemicGraph
 end
 
 # =============================================================================
-# Required EpidemicGraph Interface
+# Core Interface Implementation (Required Methods)
 # =============================================================================
 
 function num_nodes(lattice::SquareLattice)::Int
     return lattice.width * lattice.height
 end
 
-function node_states(lattice::SquareLattice)::Vector{NodeState}
+function node_states_raw(lattice::SquareLattice)::Vector{Int8}
     return lattice.states
 end
 
-function set_node_states!(lattice::SquareLattice, states::Vector{NodeState})
+function set_node_states_raw!(lattice::SquareLattice, states::Vector{Int8})
     if length(states) != num_nodes(lattice)
         throw(ArgumentError("Expected $(num_nodes(lattice)) states, got $(length(states))"))
     end
     lattice.states = states
 end
 
-function get_node_state(lattice::SquareLattice, node_id::Int)::NodeState
-    if node_id < 1 || node_id > num_nodes(lattice)
-        throw(BoundsError("Node ID $node_id out of range [1, $(num_nodes(lattice))]"))
-    end
-    return lattice.states[node_id]
-end
-
-function set_node_state!(lattice::SquareLattice, node_id::Int, state::NodeState)
-    if node_id < 1 || node_id > num_nodes(lattice)
-        throw(BoundsError("Node ID $node_id out of range [1, $(num_nodes(lattice))]"))
-    end
-    lattice.states[node_id] = state
-end
-
-function get_boundary_nodes(lattice::SquareLattice)::Vector{Int}
-    return copy(lattice.boundary_nodes)
-end
-
-# =============================================================================
-# Neighbor Operations (Core Performance Critical Functions)
-# =============================================================================
-
-"""
-Get neighbors of a node (optimized for square lattice).
-
-# Arguments
-- `lattice::SquareLattice`: The lattice
-- `node_id::Int`: Node index (1-indexed)
-
-# Returns
-- `Vector{Int}`: Array of neighbor indices
-
-# Performance Notes
-This function is called frequently in epidemic simulations and is optimized
-for both absorbing and periodic boundary conditions.
-"""
 function get_neighbors(lattice::SquareLattice, node_id::Int)::Vector{Int}
     if node_id < 1 || node_id > num_nodes(lattice)
-        throw(BoundsError("Node ID $node_id out of range"))
+        throw(BoundsError("Node ID $node_id out of range [1, $(num_nodes(lattice))]"))
     end
     
-    row, col = index_to_coord(node_id, lattice.width)
+    row, col = _index_to_coord(node_id, lattice.height)
     neighbors = Int[]
     
-    if lattice.boundary == PERIODIC
-        # Periodic boundaries - always 4 neighbors
-        sizehint!(neighbors, 4)
+    if lattice.boundary == ABSORBING
+        # Absorbing: only add neighbors within bounds
+        _add_neighbor_if_valid!(neighbors, row-1, col, lattice)    # North
+        _add_neighbor_if_valid!(neighbors, row+1, col, lattice)    # South  
+        _add_neighbor_if_valid!(neighbors, row, col-1, lattice)    # West
+        _add_neighbor_if_valid!(neighbors, row, col+1, lattice)    # East
+    else  # PERIODIC
+        # Periodic: wrap around boundaries
+        north_row = row == 1 ? lattice.height : row - 1
+        south_row = row == lattice.height ? 1 : row + 1
+        west_col = col == 1 ? lattice.width : col - 1
+        east_col = col == lattice.width ? 1 : col + 1
         
-        # North neighbor
-        north_row = apply_periodic_boundary(row - 1, lattice.height)
-        push!(neighbors, coord_to_index(north_row, col, lattice.width))
-        
-        # South neighbor  
-        south_row = apply_periodic_boundary(row + 1, lattice.height)
-        push!(neighbors, coord_to_index(south_row, col, lattice.width))
-        
-        # West neighbor
-        west_col = apply_periodic_boundary(col - 1, lattice.width)
-        push!(neighbors, coord_to_index(row, west_col, lattice.width))
-        
-        # East neighbor
-        east_col = apply_periodic_boundary(col + 1, lattice.width)
-        push!(neighbors, coord_to_index(row, east_col, lattice.width))
-        
-    else  # ABSORBING boundaries
-        # Variable number of neighbors (2, 3, or 4)
-        sizehint!(neighbors, 4)
-        
-        # North neighbor
-        if row > 1
-            push!(neighbors, coord_to_index(row - 1, col, lattice.width))
-        end
-        
-        # South neighbor
-        if row < lattice.height
-            push!(neighbors, coord_to_index(row + 1, col, lattice.width))
-        end
-        
-        # West neighbor  
-        if col > 1
-            push!(neighbors, coord_to_index(row, col - 1, lattice.width))
-        end
-        
-        # East neighbor
-        if col < lattice.width
-            push!(neighbors, coord_to_index(row, col + 1, lattice.width))
-        end
+        push!(neighbors, _coord_to_index(north_row, col, lattice.height))
+        push!(neighbors, _coord_to_index(south_row, col, lattice.height))
+        push!(neighbors, _coord_to_index(row, west_col, lattice.height))
+        push!(neighbors, _coord_to_index(row, east_col, lattice.height))
     end
     
     return neighbors
 end
 
+function get_boundary_nodes(lattice::SquareLattice)::Vector{Int}
+    return copy(lattice.boundary_nodes)  # Return copy to prevent modification
+end
+
+# =============================================================================
+# Coordinate Conversion (High Performance)
+# =============================================================================
+
 """
-Get degree (number of neighbors) of a node without allocating neighbor array.
+Convert 2D lattice coordinates to linear index.
+Uses column-major ordering for cache efficiency: index = col + (row-1)*height
 
-More efficient than `length(get_neighbors(lattice, node_id))` for degree queries.
-
-# Arguments
-- `lattice::SquareLattice`: The lattice
-- `node_id::Int`: Node index
+# Arguments  
+- `row::Int`: Row coordinate (1-indexed)
+- `col::Int`: Column coordinate (1-indexed)
+- `height::Int`: Height of lattice
 
 # Returns
-- `Int`: Number of neighbors
+- `Int`: Linear index (1-indexed)
 """
-function get_node_degree(lattice::SquareLattice, node_id::Int)::Int
-    if lattice.boundary == PERIODIC
-        return 4  # Always 4 neighbors with periodic boundaries
-    else
-        # Count neighbors without allocation
-        row, col = index_to_coord(node_id, lattice.width)
-        degree = 0
-        
-        if row > 1; degree += 1; end                    # North
-        if row < lattice.height; degree += 1; end      # South  
-        if col > 1; degree += 1; end                    # West
-        if col < lattice.width; degree += 1; end       # East
-        
-        return degree
-    end
+@inline function _coord_to_index(row::Int, col::Int, height::Int)::Int
+    return col + (row - 1) * height
 end
 
 """
-Count neighbors in a specific state (optimized to avoid allocations).
-
-Critical function for ZIM rate calculations.
+Convert linear index to 2D lattice coordinates.
 
 # Arguments
-- `lattice::SquareLattice`: The lattice
-- `node_id::Int`: Node to query
-- `target_state::NodeState`: State to count
+- `index::Int`: Linear index (1-indexed) 
+- `height::Int`: Height of lattice
 
 # Returns
-- `Int`: Number of neighbors in target state
+- `Tuple{Int, Int}`: (row, col) coordinates (1-indexed)
 """
-function count_neighbors_by_state(lattice::SquareLattice, node_id::Int, 
-                                 target_state::NodeState)::Int
-    row, col = index_to_coord(node_id, lattice.width)
-    count = 0
+@inline function _index_to_coord(index::Int, height::Int)::Tuple{Int, Int}
+    row, col = divrem(index - 1, height)
+    return (row + 1, col + 1)
+end
+
+# Public coordinate conversion functions
+function coord_to_index(lattice::SquareLattice, row::Int, col::Int)::Int
+    if row < 1 || row > lattice.height || col < 1 || col > lattice.width
+        throw(BoundsError("Coordinates ($row, $col) out of bounds"))
+    end
+    return _coord_to_index(row, col, lattice.height)
+end
+
+function index_to_coord(lattice::SquareLattice, index::Int)::Tuple{Int, Int}
+    if index < 1 || index > num_nodes(lattice)
+        throw(BoundsError("Index $index out of bounds"))
+    end
+    return _index_to_coord(index, lattice.height)
+end
+
+# =============================================================================
+# Boundary Computation (Internal)
+# =============================================================================
+
+"""
+Pre-compute boundary node indices for absorbing lattices.
+"""
+function _compute_boundary_nodes(width::Int, height::Int)::Vector{Int}
+    boundary_nodes = Int[]
+    sizehint!(boundary_nodes, 2 * (width + height - 2))  # Pre-allocate
     
-    if lattice.boundary == PERIODIC
-        # Check all 4 neighbors with wrapping
-        neighbors = [
-            coord_to_index(apply_periodic_boundary(row - 1, lattice.height), col, lattice.width),
-            coord_to_index(apply_periodic_boundary(row + 1, lattice.height), col, lattice.width), 
-            coord_to_index(row, apply_periodic_boundary(col - 1, lattice.width), lattice.width),
-            coord_to_index(row, apply_periodic_boundary(col + 1, lattice.width), lattice.width)
-        ]
-        
-        for neighbor in neighbors
-            if lattice.states[neighbor] == target_state
-                count += 1
-            end
-        end
-        
-    else  # ABSORBING boundaries
-        # Check neighbors that exist
-        if row > 1 && lattice.states[coord_to_index(row - 1, col, lattice.width)] == target_state
-            count += 1
-        end
-        if row < lattice.height && lattice.states[coord_to_index(row + 1, col, lattice.width)] == target_state
-            count += 1  
-        end
-        if col > 1 && lattice.states[coord_to_index(row, col - 1, lattice.width)] == target_state
-            count += 1
-        end
-        if col < lattice.width && lattice.states[coord_to_index(row, col + 1, lattice.width)] == target_state
-            count += 1
+    # Top and bottom rows
+    for col in 1:width
+        push!(boundary_nodes, _coord_to_index(1, col, height))        # Top
+        if height > 1  # Avoid duplicates for 1D lattice
+            push!(boundary_nodes, _coord_to_index(height, col, height)) # Bottom
         end
     end
     
-    return count
+    # Left and right columns (excluding corners already added)
+    if width > 1  # Only if lattice is 2D
+        for row in 2:(height-1)
+            push!(boundary_nodes, _coord_to_index(row, 1, height))     # Left
+            push!(boundary_nodes, _coord_to_index(row, width, height)) # Right
+        end
+    end
+    
+    return boundary_nodes
+end
+
+"""
+Add neighbor to list if coordinates are within lattice bounds (for absorbing).
+"""
+function _add_neighbor_if_valid!(neighbors::Vector{Int}, row::Int, col::Int, 
+                                lattice::SquareLattice)
+    if 1 <= row <= lattice.height && 1 <= col <= lattice.width
+        push!(neighbors, _coord_to_index(row, col, lattice.height))
+    end
 end
 
 # =============================================================================
@@ -250,53 +211,12 @@ end
 # =============================================================================
 
 """
-Convert lattice coordinates to linear index.
-
-# Arguments  
-- `lattice::SquareLattice`: The lattice
-- `row::Int`: Row coordinate (1-indexed)
-- `col::Int`: Column coordinate (1-indexed)
-
-# Returns
-- `Int`: Linear index
-"""
-function coord_to_index(lattice::SquareLattice, row::Int, col::Int)::Int
-    if row < 1 || row > lattice.height || col < 1 || col > lattice.width
-        throw(BoundsError("Coordinates ($row, $col) out of bounds"))
-    end
-    return coord_to_index(row, col, lattice.width)
-end
-
-"""
-Convert linear index to lattice coordinates.
-
-# Arguments
-- `lattice::SquareLattice`: The lattice  
-- `index::Int`: Linear index
-
-# Returns
-- `Tuple{Int, Int}`: (row, col) coordinates
-"""
-function index_to_coord(lattice::SquareLattice, index::Int)::Tuple{Int, Int}
-    if index < 1 || index > num_nodes(lattice)
-        throw(BoundsError("Index $index out of range"))
-    end
-    return index_to_coord(index, lattice.width)
-end
-
-"""
-Get the center node of the lattice.
-
-# Arguments
-- `lattice::SquareLattice`: The lattice
-
-# Returns  
-- `Int`: Index of center node
+Get the center node of the lattice (useful for initialization).
 """
 function get_center_node(lattice::SquareLattice)::Int
     center_row = (lattice.height + 1) ÷ 2
     center_col = (lattice.width + 1) ÷ 2
-    return coord_to_index(lattice, center_row, center_col)
+    return _coord_to_index(center_row, center_col, lattice.height)
 end
 
 """
@@ -308,22 +228,26 @@ Get random nodes from the lattice.
 - `rng::AbstractRNG`: Random number generator
 
 # Returns
-- `Vector{Int}`: Array of random node indices
+- `Vector{Int}`: Vector of random node indices
 """
 function get_random_nodes(lattice::SquareLattice, count::Int, 
                          rng::AbstractRNG = Random.default_rng())::Vector{Int}
+    if count > num_nodes(lattice)
+        throw(ArgumentError("Cannot sample $count nodes from $(num_nodes(lattice)) total"))
+    end
     return rand(rng, 1:num_nodes(lattice), count)
 end
 
 """
-Get distance from node to nearest boundary.
+Get distance from node to nearest boundary (for absorbing lattices).
+Returns Inf for periodic lattices.
 
 # Arguments
-- `lattice::SquareLattice`: The lattice  
+- `lattice::SquareLattice`: The lattice
 - `node_id::Int`: Node index
 
-# Returns
-- `Int`: Distance to boundary (Inf for periodic lattices)
+# Returns  
+- `Float64`: Distance to nearest boundary
 """
 function distance_to_boundary(lattice::SquareLattice, node_id::Int)::Float64
     if lattice.boundary == PERIODIC
@@ -332,13 +256,97 @@ function distance_to_boundary(lattice::SquareLattice, node_id::Int)::Float64
     
     row, col = index_to_coord(lattice, node_id)
     
-    # Distance to each boundary
+    # Distance to each boundary edge
     dist_north = row - 1
-    dist_south = lattice.height - row  
-    dist_west = col - 1
+    dist_south = lattice.height - row
+    dist_west = col - 1  
     dist_east = lattice.width - col
     
     return Float64(min(dist_north, dist_south, dist_west, dist_east))
+end
+
+"""
+Check if a node is on the boundary (for absorbing lattices).
+"""
+function is_boundary_node(lattice::SquareLattice, node_id::Int)::Bool
+    if lattice.boundary == PERIODIC
+        return false  # No boundary concept
+    end
+    return node_id in lattice.boundary_nodes
+end
+
+# =============================================================================
+# Performance-Optimized Neighbor Counting
+# =============================================================================
+
+"""
+Optimized neighbor counting for epidemic processes.
+This is a performance-critical function used heavily by ZIM.
+
+# Arguments
+- `lattice::SquareLattice`: The lattice
+- `node_id::Int`: Node to query
+- `target_state::NodeState`: State to count
+
+# Returns
+- `Int`: Number of neighbors in target state
+"""
+function count_neighbors_by_state(lattice::SquareLattice, node_id::Int, 
+                                 target_state::NodeState)::Int
+    # Use optimized inline coordinate arithmetic instead of get_neighbors()
+    row, col = _index_to_coord(node_id, lattice.height)
+    states = lattice.states
+    target_int = state_to_int(target_state)
+    count = 0
+    
+    if lattice.boundary == ABSORBING
+        # Check each direction with bounds checking
+        if row > 1  # North
+            north_idx = _coord_to_index(row-1, col, lattice.height)
+            if states[north_idx] == target_int
+                count += 1
+            end
+        end
+        if row < lattice.height  # South
+            south_idx = _coord_to_index(row+1, col, lattice.height)
+            if states[south_idx] == target_int
+                count += 1
+            end
+        end
+        if col > 1  # West
+            west_idx = _coord_to_index(row, col-1, lattice.height)
+            if states[west_idx] == target_int
+                count += 1
+            end
+        end
+        if col < lattice.width  # East
+            east_idx = _coord_to_index(row, col+1, lattice.height)
+            if states[east_idx] == target_int
+                count += 1
+            end
+        end
+    else  # PERIODIC
+        # Periodic boundaries with wraparound
+        north_row = row == 1 ? lattice.height : row - 1
+        south_row = row == lattice.height ? 1 : row + 1
+        west_col = col == 1 ? lattice.width : col - 1
+        east_col = col == lattice.width ? 1 : col + 1
+        
+        indices = [
+            _coord_to_index(north_row, col, lattice.height),
+            _coord_to_index(south_row, col, lattice.height),
+            _coord_to_index(row, west_col, lattice.height),
+            _coord_to_index(row, east_col, lattice.height)
+        ]
+        
+        for idx in indices
+            if states[idx] == target_int
+                count += 1
+            end
+        end
+    end
+    
+    return count
 end
 
 # =============================================================================
@@ -346,19 +354,19 @@ end
 # =============================================================================
 
 """
-Create a square lattice with specified boundary conditions.
+Create square lattice with specified boundary conditions.
 
 # Arguments
-- `width::Int`: Width of lattice
-- `height::Int`: Height of lattice  
+- `width::Int`: Width of lattice (columns)
+- `height::Int`: Height of lattice (rows)  
 - `boundary::Symbol`: :absorbing or :periodic
 
 # Returns
-- `SquareLattice`: Configured square lattice
+- `SquareLattice`: Configured lattice
 
 # Example
 ```julia
-julia> lattice = create_square_lattice(100, 100, :periodic)
+julia> lattice = create_square_lattice(100, 100, :absorbing)
 julia> center = get_center_node(lattice)
 ```
 """
@@ -376,7 +384,7 @@ function create_square_lattice(width::Int, height::Int,
 end
 
 """
-Create a square torus (periodic boundaries).
+Create square torus (periodic boundaries).
 
 # Arguments
 - `size::Int`: Size of square torus
