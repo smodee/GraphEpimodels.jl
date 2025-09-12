@@ -15,6 +15,7 @@ Key differences from SIR:
 """
 
 using Random
+using Base.Threads
 using ..GraphEpimodels: EpidemicProcess, SIRLikeProcess, SquareLattice
 using ..GraphEpimodels: NodeState, SUSCEPTIBLE, INFECTED, REMOVED
 using ..GraphEpimodels: GillespieScheduler, PerformanceScheduler, gillespie_step
@@ -267,13 +268,46 @@ Estimate survival probability via Monte Carlo simulation.
 - `initial_infected::Vector{Int}`: Initial infected nodes
 - `num_simulations::Int`: Number of simulation runs (default: 1000)
 - `max_time::Float64`: Maximum time per simulation (default: 1000.0)
+- `parallel::Bool`: Use parallel computing (default: false)
+- `num_threads::Int`: Number of threads to use (default: Threads.nthreads())
 
 # Returns
 - `Dict{Symbol, Any}`: Dictionary with survival statistics
+
+# Examples
+```julia
+# Sequential (original behavior)
+julia> stats = estimate_survival_probability(zim, [center]; num_simulations=1000)
+
+# Parallel computing
+julia> stats = estimate_survival_probability(zim, [center]; 
+                                           num_simulations=1000, 
+                                           parallel=true, 
+                                           num_threads=8)
+```
 """
 function estimate_survival_probability(process::ZIMProcess, initial_infected::Vector{Int};
                                       num_simulations::Int = 1000,
-                                      max_time::Float64 = 1000.0)::Dict{Symbol, Any}
+                                      max_time::Float64 = 1000.0,
+                                      parallel::Bool = false,
+                                      num_threads::Int = Threads.nthreads())::Dict{Symbol, Any}
+    
+    if parallel
+        return _estimate_survival_probability_parallel(process, initial_infected, 
+                                                     num_simulations, max_time, num_threads)
+    else
+        return _estimate_survival_probability_sequential(process, initial_infected, 
+                                                       num_simulations, max_time)
+    end
+end
+
+"""
+Sequential implementation (original behavior).
+"""
+function _estimate_survival_probability_sequential(process::ZIMProcess, 
+                                                  initial_infected::Vector{Int},
+                                                  num_simulations::Int,
+                                                  max_time::Float64)::Dict{Symbol, Any}
     
     survival_outcomes = Bool[]
     escape_times = Float64[]
@@ -308,7 +342,91 @@ function estimate_survival_probability(process::ZIMProcess, initial_infected::Ve
         :mean_escape_time => isempty(escape_times) ? NaN : sum(escape_times) / length(escape_times),
         :mean_final_size => sum(final_sizes) / length(final_sizes),
         :num_escapes => length(escape_times),
-        :num_extinctions => num_simulations - length(escape_times)
+        :num_extinctions => num_simulations - length(escape_times),
+        :parallel => false
+    )
+end
+
+"""
+Parallel implementation using thread-local ZIM processes.
+"""
+function _estimate_survival_probability_parallel(template_process::ZIMProcess, 
+                                                initial_infected::Vector{Int},
+                                                num_simulations::Int,
+                                                max_time::Float64,
+                                                num_threads::Int)::Dict{Symbol, Any}
+    
+    println("Running $(num_simulations) simulations on $(min(num_threads, Threads.nthreads())) threads...")
+    
+    # Pre-allocate thread-safe result arrays
+    survival_outcomes = Vector{Bool}(undef, num_simulations)
+    escape_times = Vector{Float64}()
+    final_sizes = Vector{Int}(undef, num_simulations)
+    
+    # Thread-safe escape times collection
+    escape_times_lock = Threads.SpinLock()
+    
+    # Create thread-local ZIM processes to avoid memory overhead
+    thread_processes = Vector{ZIMProcess}()
+    
+    # Pre-create one ZIM process per thread
+    println("Creating $(min(num_threads, Threads.nthreads())) thread-local ZIM processes...")
+    for tid in 1:min(num_threads, Threads.nthreads())
+        # Create a copy of the template process for this thread
+        thread_zim = create_zim_simulation(
+            template_process.lattice.width,
+            template_process.lattice.height, 
+            template_process.λ, 
+            template_process.μ;
+            boundary = template_process.lattice.boundary == ABSORBING ? :absorbing : :periodic,
+            rng_seed = nothing  # Each thread gets different random seed
+        )
+        push!(thread_processes, thread_zim)
+    end
+    
+    # Run simulations in parallel
+    start_time = time()
+    Threads.@threads for i in 1:num_simulations
+        # Get thread-local process
+        thread_id = Threads.threadid()
+        process = thread_processes[thread_id]
+        
+        # Reset simulation
+        reset!(process, initial_infected)
+        
+        # Run until escape, extinction, or timeout
+        results = run_simulation(process; max_time=max_time)
+        
+        # Record outcomes
+        survived = has_escaped(process)
+        survival_outcomes[i] = survived
+        final_sizes[i] = results[:total_ever_infected]
+        
+        # Thread-safe escape time recording
+        if survived
+            Threads.lock(escape_times_lock) do
+                push!(escape_times, results[:time])
+            end
+        end
+    end
+    wall_clock_time = time() - start_time
+    
+    # Compute statistics
+    survival_prob, survival_se = compute_survival_probability(survival_outcomes)
+    
+    println("Parallel computation completed in $(round(wall_clock_time, digits=2))s")
+    println("Speedup estimate: $(round(num_simulations * 168 / wall_clock_time, digits=1))x faster than sequential")
+    
+    return Dict{Symbol, Any}(
+        :survival_probability => survival_prob,
+        :survival_std_error => survival_se,
+        :mean_escape_time => isempty(escape_times) ? NaN : sum(escape_times) / length(escape_times),
+        :mean_final_size => sum(final_sizes) / length(final_sizes),
+        :num_escapes => length(escape_times),
+        :num_extinctions => num_simulations - length(escape_times),
+        :parallel => true,
+        :num_threads_used => min(num_threads, Threads.nthreads()),
+        :wall_clock_time => wall_clock_time
     )
 end
 
