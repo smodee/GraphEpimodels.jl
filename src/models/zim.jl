@@ -90,6 +90,7 @@ function sample_active_node(process::ZIMProcess, rng::AbstractRNG)::Int
         return _weighted_sample_active(process.active_tracker, rng)
     else
         return _weighted_sample_active_fast(process.active_tracker, n_active, rng)
+    end
 end
 
 function step!(process::ZIMProcess)::Float64
@@ -257,13 +258,6 @@ end
 # =============================================================================
 # ZIM-Specific Utility Functions
 # =============================================================================
-
-"""
-Check if zombies have escaped (reached boundary).
-"""
-function has_escaped(process::ZIMProcess)::Bool
-    return has_escaped(process)  # Use the general interface method
-end
 
 """
 Get ZIM-specific statistics.
