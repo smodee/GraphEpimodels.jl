@@ -1,448 +1,312 @@
 """
 Zombie Infection Model (ZIM) implementation.
 
-This module implements the Zombie Infection Model described in Bethuelsen,
-Broman & Modée (2024). The ZIM is a variant of the SIR model where infected
-individuals (zombies) attempt to bite susceptible neighbors, and susceptible
-individuals fight back to kill zombies.
+High-performance implementation of the ZIM process using efficient active node tracking.
+Based on the algorithm from your original implementation, optimized for large lattices.
 
-Key differences from SIR:
-- Infected nodes don't recover spontaneously
-- Recovery happens when susceptible neighbors kill the infected node  
-- Kill rate: μ × (number of susceptible neighbors)
-- Infection rate: λ × (number of susceptible neighbors) for each infected node
-- Outcome probability: λ/(λ+μ) for infection, μ/(λ+μ) for kill
+The ZIM process:
+1. Each infected node (zombie) attacks susceptible neighbors at rate (λ + μ) × #susceptible_neighbors  
+2. Outcome probability: λ/(λ+μ) for infection, μ/(λ+μ) for kill
+3. Process stops when no active zombies remain or escape occurs
 """
 
 using Random
-using Base.Threads
-using ..GraphEpimodels: EpidemicProcess, SIRLikeProcess, SquareLattice
-using ..GraphEpimodels: NodeState, SUSCEPTIBLE, INFECTED, REMOVED
-using ..GraphEpimodels: GillespieScheduler, PerformanceScheduler, gillespie_step
-using ..GraphEpimodels: get_nodes_in_state, count_neighbors_by_state, get_neighbors
-using ..GraphEpimodels: validate_epidemic_parameters, create_rng, compute_survival_probability
-using ..GraphEpimodels: create_square_lattice, get_center_node, get_random_nodes
+
+# Import required interfaces (assumes graphs.jl and epiprocess.jl are loaded)
 
 # =============================================================================
-# ZIM Process Implementation
+# ZIM Process Implementation  
 # =============================================================================
 
 """
-Zombie Infection Model process.
+High-performance Zombie Infection Model process.
 
-The ZIM evolves according to:
-1. Each infected node (zombie) interacts with susceptible neighbors at rate (λ + μ) × #susceptible_neighbors
-2. Outcome: infection with probability λ/(λ+μ), kill with probability μ/(λ+μ)
-3. Process stops when no infected nodes remain
+Uses efficient active node tracking (only processes zombies that can cause events)
+and weighted sampling based on susceptible neighbor counts. Optimized for 
+large-scale simulations on lattices and general graphs.
 
 # Fields
-- `lattice::SquareLattice`: The underlying graph
+- `graph::AbstractEpidemicGraph`: The underlying graph
 - `λ::Float64`: Infection rate (bite rate)
-- `μ::Float64`: Kill rate  
-- `infection_prob::Float64`: Probability λ/(λ+μ) that zombie wins interaction
-- `scheduler::Union{GillespieScheduler, PerformanceScheduler}`: Event scheduler
+- `μ::Float64`: Kill rate (fight-back rate)  
+- `infection_prob::Float64`: Pre-computed λ/(λ+μ)
+- `active_tracker::DictActiveTracker`: Tracks active zombies and neighbor counts
 - `time::Float64`: Current simulation time
 - `steps::Int`: Number of steps executed
 - `rng::AbstractRNG`: Random number generator
 """
 mutable struct ZIMProcess <: SIRLikeProcess
-    lattice::SquareLattice
+    graph::AbstractEpidemicGraph
     λ::Float64
     μ::Float64
     infection_prob::Float64
-    scheduler::Union{GillespieScheduler, PerformanceScheduler}
+    active_tracker::DictActiveTracker
     time::Float64
     steps::Int
     rng::AbstractRNG
     
-    function ZIMProcess(lattice::SquareLattice, λ::Float64, μ::Float64 = 1.0;
+    function ZIMProcess(graph::AbstractEpidemicGraph, λ::Float64, μ::Float64 = 1.0;
                        rng::AbstractRNG = Random.default_rng())
-        validate_epidemic_parameters(λ, μ)
+        
+        _validate_zim_parameters(λ, μ)
         
         infection_prob = λ / (λ + μ)
+        active_tracker = DictActiveTracker()
         
-        # Choose scheduler based on lattice size
-        scheduler = if num_nodes(lattice) > 100_000
-            PerformanceScheduler(num_nodes(lattice), rng)
-        else
-            GillespieScheduler(rng)
-        end
-        
-        new(lattice, λ, μ, infection_prob, scheduler, 0.0, 0, rng)
+        new(graph, λ, μ, infection_prob, active_tracker, 0.0, 0, rng)
     end
 end
 
 # =============================================================================
-# Required EpidemicProcess Interface
+# Required Interface Implementation
 # =============================================================================
 
-function get_graph(process::ZIMProcess)::SquareLattice
-    return process.lattice
+@inline function get_graph(process::ZIMProcess)::AbstractEpidemicGraph
+    return process.graph
 end
 
-function current_time(process::ZIMProcess)::Float64
+@inline function current_time(process::ZIMProcess)::Float64
     return process.time
 end
 
-function step_count(process::ZIMProcess)::Int
+@inline function step_count(process::ZIMProcess)::Int
     return process.steps
 end
 
 function is_active(process::ZIMProcess)::Bool
-    infected_nodes = get_nodes_in_state(process.lattice, INFECTED)
-    return !isempty(infected_nodes)
+    return has_active_nodes(process.active_tracker)
 end
 
 function get_total_rate(process::ZIMProcess)::Float64
-    infected_nodes = get_nodes_in_state(process.lattice, INFECTED)
-    total_rate = 0.0
-    
-    for node in infected_nodes
-        susceptible_neighbors = count_neighbors_by_state(process.lattice, node, SUSCEPTIBLE)
-        total_rate += (process.λ + process.μ) * susceptible_neighbors
-    end
-    
-    return total_rate
+    boundary_size = get_total_boundary(process.active_tracker)
+    return (process.λ + process.μ) * boundary_size
 end
 
-"""
-Execute one ZIM simulation step.
+function sample_active_node(process::ZIMProcess, rng::AbstractRNG)::Int
+    # ZIM uses weighted sampling (your original algorithm)
+    return _weighted_sample_active(process.active_tracker, rng)
+end
 
-# Arguments
-- `process::ZIMProcess`: The ZIM process
-
-# Returns  
-- `Float64`: Time increment for this step (Inf if no events possible)
-"""
 function step!(process::ZIMProcess)::Float64
-    # Get all infected nodes and their rates
-    infected_nodes = get_nodes_in_state(process.lattice, INFECTED)
-    
-    if isempty(infected_nodes)
-        return Inf  # No more infected nodes
+    if !is_active(process)
+        return Inf  # No active zombies
     end
     
-    # Calculate rates for each infected node
-    rates = Float64[]
-    sizehint!(rates, length(infected_nodes))
-    
-    for node in infected_nodes
-        susceptible_neighbors = count_neighbors_by_state(process.lattice, node, SUSCEPTIBLE)
-        rate = (process.λ + process.μ) * susceptible_neighbors
-        push!(rates, rate)
+    # Calculate time increment (Gillespie algorithm)
+    total_rate = get_total_rate(process)
+    if total_rate <= 0
+        return Inf
     end
     
-    # Sample next event using Gillespie algorithm
-    dt, zombie_idx = if process.scheduler isa PerformanceScheduler
-        gillespie_step(process.scheduler, rates, length(rates))
+    dt = randexp(process.rng) / total_rate
+    
+    # Sample which zombie acts (weighted by susceptible neighbor count)
+    acting_zombie = sample_active_node(process, process.rng)
+    
+    # Determine outcome: infection vs kill
+    if rand(process.rng) < process.infection_prob
+        # Zombie wins - infect a susceptible neighbor
+        _zombie_wins!(process, acting_zombie)
     else
-        gillespie_step(process.scheduler, rates)
-    end
-    
-    if dt == Inf
-        return dt  # No positive rates
+        # Zombie loses - gets killed
+        _zombie_loses!(process, acting_zombie)
     end
     
     # Update time and step count
     process.time += dt
     process.steps += 1
     
-    # Execute the selected event
-    zombie_node = infected_nodes[zombie_idx]
-    
-    # Determine outcome: infection vs kill
-    if rand(process.rng) < process.infection_prob
-        # Zombie wins - infect a susceptible neighbor
-        _zombie_wins!(process, zombie_node)
-    else
-        # Zombie loses - gets killed
-        _zombie_loses!(process, zombie_node)
-    end
-    
     return dt
 end
 
-"""
-Reset process to initial conditions.
-
-# Arguments
-- `process::ZIMProcess`: The ZIM process
-- `initial_infected::Vector{Int}`: Nodes to start as infected
-"""
 function reset!(process::ZIMProcess, initial_infected::Vector{Int})
+    # Validate input
+    validate_initial_infected(initial_infected, process.graph)
+    
     # Reset time and counters
     process.time = 0.0
     process.steps = 0
     
-    # Reset all nodes to susceptible
-    fill!(node_states(process.lattice), SUSCEPTIBLE)
+    # Clear active tracking
+    clear_active_nodes!(process.active_tracker)
     
-    # Set initial infected nodes
+    # Reset all nodes to susceptible
+    states = node_states_raw(process.graph)
+    fill!(states, state_to_int(SUSCEPTIBLE))
+    
+    # Set initial infected nodes and build active tracking
+    infected_state = state_to_int(INFECTED)
     for node_id in initial_infected
-        set_node_state!(process.lattice, node_id, INFECTED)
+        states[node_id] = infected_state
+        
+        # Add to active tracking if it has susceptible neighbors
+        susceptible_count = count_neighbors_by_state(process.graph, node_id, SUSCEPTIBLE)
+        add_active_node!(process.active_tracker, node_id, susceptible_count)
     end
 end
 
 # =============================================================================
-# ZIM-Specific Event Handlers (Internal Functions)
+# ZIM Event Handlers (Internal)
 # =============================================================================
 
 """
 Handle zombie victory: infect a random susceptible neighbor.
 
-# Arguments
-- `process::ZIMProcess`: The ZIM process
-- `zombie_node::Int`: Index of the attacking zombie
+This is the performance-critical function that implements your original algorithm
+with efficient active node tracking updates.
 """
 function _zombie_wins!(process::ZIMProcess, zombie_node::Int)
-    # Get susceptible neighbors
-    neighbors = get_neighbors(process.lattice, zombie_node)
-    susceptible_neighbors = filter(n -> get_node_state(process.lattice, n) == SUSCEPTIBLE, 
-                                  neighbors)
+    # Get susceptible neighbors of the attacking zombie
+    neighbors = get_neighbors(process.graph, zombie_node)
+    states = node_states_raw(process.graph)
+    susceptible_state = state_to_int(SUSCEPTIBLE)
+    infected_state = state_to_int(INFECTED)
     
-    if !isempty(susceptible_neighbors)
-        # Randomly choose a susceptible neighbor to infect
-        target = rand(process.rng, susceptible_neighbors)
-        set_node_state!(process.lattice, target, INFECTED)
+    # Find susceptible neighbors
+    susceptible_neighbors = Int[]
+    for neighbor in neighbors
+        if states[neighbor] == susceptible_state
+            push!(susceptible_neighbors, neighbor)
+        end
     end
+    
+    if isempty(susceptible_neighbors)
+        # This shouldn't happen if active tracking is correct
+        @warn "Zombie $zombie_node has no susceptible neighbors but is marked active"
+        remove_active_node!(process.active_tracker, zombie_node)
+        return
+    end
+    
+    # Randomly select a susceptible neighbor to infect
+    target = rand(process.rng, susceptible_neighbors)
+    states[target] = infected_state
+    
+    # Update active tracking (this is the key performance optimization)
+    _update_active_tracking_after_infection!(process, zombie_node, target)
 end
 
 """
 Handle zombie defeat: zombie is killed and removed.
-
-# Arguments
-- `process::ZIMProcess`: The ZIM process  
-- `zombie_node::Int`: Index of the zombie that was killed
 """
 function _zombie_loses!(process::ZIMProcess, zombie_node::Int)
-    set_node_state!(process.lattice, zombie_node, REMOVED)
+    # Remove zombie from graph
+    states = node_states_raw(process.graph)
+    states[zombie_node] = state_to_int(REMOVED)
+    
+    # Remove from active tracking
+    remove_active_node!(process.active_tracker, zombie_node)
+    
+    # Update neighbor active counts (they gained a susceptible "neighbor" - the removed zombie)
+    _update_neighbors_after_zombie_death!(process, zombie_node)
+end
+
+"""
+Update active tracking after a successful infection.
+
+This implements the efficient neighbor count updates from your original algorithm.
+"""
+function _update_active_tracking_after_infection!(process::ZIMProcess, attacking_zombie::Int, new_zombie::Int)
+    # 1. Check if the new zombie becomes active
+    new_susceptible_count = count_neighbors_by_state(process.graph, new_zombie, SUSCEPTIBLE)
+    add_active_node!(process.active_tracker, new_zombie, new_susceptible_count)
+    
+    # 2. Update the attacking zombie's count (lost one susceptible neighbor)
+    current_count = get(process.active_tracker.active_nodes, attacking_zombie, 0)
+    update_active_node!(process.active_tracker, attacking_zombie, current_count - 1)
+    
+    # 3. Update all zombie neighbors of the new zombie (they each lost a susceptible neighbor)
+    new_zombie_neighbors = get_neighbors(process.graph, new_zombie)
+    states = node_states_raw(process.graph)
+    infected_state = state_to_int(INFECTED)
+    
+    for neighbor in new_zombie_neighbors
+        if states[neighbor] == infected_state && neighbor != attacking_zombie
+            # This zombie neighbor lost a susceptible neighbor
+            neighbor_count = get(process.active_tracker.active_nodes, neighbor, 0)
+            if neighbor_count > 0
+                update_active_node!(process.active_tracker, neighbor, neighbor_count - 1)
+            end
+        end
+    end
+end
+
+"""
+Update active tracking after a zombie death.
+"""
+function _update_neighbors_after_zombie_death!(process::ZIMProcess, dead_zombie::Int)
+    # Find all zombie neighbors of the dead zombie - they gain a susceptible "slot"
+    zombie_neighbors = get_neighbors(process.graph, dead_zombie)
+    states = node_states_raw(process.graph)
+    infected_state = state_to_int(INFECTED)
+    
+    for neighbor in zombie_neighbors
+        if states[neighbor] == infected_state
+            # This zombie neighbor gained a susceptible neighbor (where the dead zombie was)
+            current_count = get(process.active_tracker.active_nodes, neighbor, 0)
+            new_count = count_neighbors_by_state(process.graph, neighbor, SUSCEPTIBLE)
+            update_active_node!(process.active_tracker, neighbor, new_count)
+        end
+    end
 end
 
 # =============================================================================
-# ZIM-Specific Analysis Functions
+# ZIM-Specific Utility Functions
 # =============================================================================
 
 """
-Check if infection has reached the boundary (zombie outbreak).
-
-# Arguments
-- `process::ZIMProcess`: The ZIM process
-
-# Returns
-- `Bool`: true if outbreak has occurred
+Check if zombies have escaped (reached boundary).
 """
 function has_escaped(process::ZIMProcess)::Bool
-    return has_reached_boundary(process)
+    return has_escaped(process)  # Use the general interface method
 end
 
 """
-Get current ZIM statistics.
-
-# Arguments
-- `process::ZIMProcess`: The ZIM process
-
-# Returns
-- `Dict{Symbol, Any}`: Dictionary with detailed statistics
+Get ZIM-specific statistics.
 """
 function get_zim_statistics(process::ZIMProcess)::Dict{Symbol, Any}
     base_stats = get_statistics(process)
     
-    # Add ZIM-specific statistics
-    boundary_infected = count(node -> get_node_state(process.lattice, node) == INFECTED,
-                             get_boundary_nodes(process.lattice))
-    
+    # Add ZIM-specific information
     base_stats[:λ] = process.λ
     base_stats[:μ] = process.μ
     base_stats[:infection_probability] = process.infection_prob
-    base_stats[:has_escaped] = has_escaped(process)
-    base_stats[:boundary_infected] = boundary_infected
+    base_stats[:escaped] = has_escaped(process)
+    base_stats[:active_zombies] = length(process.active_tracker.active_nodes)
+    base_stats[:total_boundary_size] = get_total_boundary(process.active_tracker)
     
     return base_stats
 end
 
+# =============================================================================
+# Parameter Validation (ZIM-specific)
+# =============================================================================
+
 """
-Estimate survival probability via Monte Carlo simulation.
-
-# Arguments
-- `process::ZIMProcess`: The ZIM process
-- `initial_infected::Vector{Int}`: Initial infected nodes
-- `num_simulations::Int`: Number of simulation runs (default: 1000)
-- `max_time::Float64`: Maximum time per simulation (default: 1000.0)
-- `parallel::Bool`: Use parallel computing (default: false)
-- `num_threads::Int`: Number of threads to use (default: Threads.nthreads())
-
-# Returns
-- `Dict{Symbol, Any}`: Dictionary with survival statistics
-
-# Examples
-```julia
-# Sequential (original behavior)
-julia> stats = estimate_survival_probability(zim, [center]; num_simulations=1000)
-
-# Parallel computing
-julia> stats = estimate_survival_probability(zim, [center]; 
-                                           num_simulations=1000, 
-                                           parallel=true, 
-                                           num_threads=8)
-```
+Validate ZIM-specific parameters.
 """
-function estimate_survival_probability(process::ZIMProcess, initial_infected::Vector{Int};
-                                      num_simulations::Int = 1000,
-                                      max_time::Float64 = 1000.0,
-                                      parallel::Bool = false,
-                                      num_threads::Int = Threads.nthreads())::Dict{Symbol, Any}
-    
-    if parallel
-        return _estimate_survival_probability_parallel(process, initial_infected, 
-                                                     num_simulations, max_time, num_threads)
-    else
-        return _estimate_survival_probability_sequential(process, initial_infected, 
-                                                       num_simulations, max_time)
+function _validate_zim_parameters(λ::Float64, μ::Float64)
+    if λ <= 0.0
+        throw(ArgumentError("Infection rate λ must be positive, got $λ"))
     end
-end
-
-"""
-Sequential implementation (original behavior).
-"""
-function _estimate_survival_probability_sequential(process::ZIMProcess, 
-                                                  initial_infected::Vector{Int},
-                                                  num_simulations::Int,
-                                                  max_time::Float64)::Dict{Symbol, Any}
-    
-    survival_outcomes = Bool[]
-    escape_times = Float64[]
-    final_sizes = Int[]
-    
-    sizehint!(survival_outcomes, num_simulations)
-    
-    for i in 1:num_simulations
-        # Reset simulation
-        reset!(process, initial_infected)
-        
-        # Run until escape, extinction, or timeout
-        results = run_simulation(process; max_time=max_time)
-        
-        # Record outcomes
-        survived = has_escaped(process)
-        push!(survival_outcomes, survived)
-        
-        if survived
-            push!(escape_times, results[:time])
-        end
-        
-        push!(final_sizes, results[:total_ever_infected])
+    if μ <= 0.0
+        throw(ArgumentError("Kill rate μ must be positive, got $μ"))
     end
-    
-    # Compute statistics
-    survival_prob, survival_se = compute_survival_probability(survival_outcomes)
-    
-    return Dict{Symbol, Any}(
-        :survival_probability => survival_prob,
-        :survival_std_error => survival_se,
-        :mean_escape_time => isempty(escape_times) ? NaN : sum(escape_times) / length(escape_times),
-        :mean_final_size => sum(final_sizes) / length(final_sizes),
-        :num_escapes => length(escape_times),
-        :num_extinctions => num_simulations - length(escape_times),
-        :parallel => false
-    )
-end
-
-"""
-Parallel implementation using thread-local ZIM processes.
-"""
-function _estimate_survival_probability_parallel(template_process::ZIMProcess, 
-                                                initial_infected::Vector{Int},
-                                                num_simulations::Int,
-                                                max_time::Float64,
-                                                num_threads::Int)::Dict{Symbol, Any}
-    
-    println("Running $(num_simulations) simulations on $(min(num_threads, Threads.nthreads())) threads...")
-    
-    # Pre-allocate thread-safe result arrays
-    survival_outcomes = Vector{Bool}(undef, num_simulations)
-    escape_times = Vector{Float64}()
-    final_sizes = Vector{Int}(undef, num_simulations)
-    
-    # Thread-safe escape times collection
-    escape_times_lock = Threads.SpinLock()
-    
-    # Create thread-local ZIM processes to avoid memory overhead
-    thread_processes = Vector{ZIMProcess}()
-    
-    # Pre-create one ZIM process per thread
-    println("Creating $(min(num_threads, Threads.nthreads())) thread-local ZIM processes...")
-    for tid in 1:min(num_threads, Threads.nthreads())
-        # Create a copy of the template process for this thread
-        thread_zim = create_zim_simulation(
-            template_process.lattice.width,
-            template_process.lattice.height, 
-            template_process.λ, 
-            template_process.μ;
-            boundary = template_process.lattice.boundary == ABSORBING ? :absorbing : :periodic,
-            rng_seed = nothing  # Each thread gets different random seed
-        )
-        push!(thread_processes, thread_zim)
+    if λ > 1000.0 || μ > 1000.0
+        @warn "Very large rates (λ=$λ, μ=$μ) may cause numerical issues"
     end
-    
-    # Run simulations in parallel
-    start_time = time()
-    Threads.@threads for i in 1:num_simulations
-        # Get thread-local process
-        thread_id = Threads.threadid()
-        process = thread_processes[thread_id]
-        
-        # Reset simulation
-        reset!(process, initial_infected)
-        
-        # Run until escape, extinction, or timeout
-        results = run_simulation(process; max_time=max_time)
-        
-        # Record outcomes
-        survived = has_escaped(process)
-        survival_outcomes[i] = survived
-        final_sizes[i] = results[:total_ever_infected]
-        
-        # Thread-safe escape time recording
-        if survived
-            Threads.lock(escape_times_lock) do
-                push!(escape_times, results[:time])
-            end
-        end
-    end
-    wall_clock_time = time() - start_time
-    
-    # Compute statistics
-    survival_prob, survival_se = compute_survival_probability(survival_outcomes)
-    
-    println("Parallel computation completed in $(round(wall_clock_time, digits=2))s")
-    println("Speedup estimate: $(round(num_simulations * 168 / wall_clock_time, digits=1))x faster than sequential")
-    
-    return Dict{Symbol, Any}(
-        :survival_probability => survival_prob,
-        :survival_std_error => survival_se,
-        :mean_escape_time => isempty(escape_times) ? NaN : sum(escape_times) / length(escape_times),
-        :mean_final_size => sum(final_sizes) / length(final_sizes),
-        :num_escapes => length(escape_times),
-        :num_extinctions => num_simulations - length(escape_times),
-        :parallel => true,
-        :num_threads_used => min(num_threads, Threads.nthreads()),
-        :wall_clock_time => wall_clock_time
-    )
 end
 
 # =============================================================================
-# Factory Functions and Convenience Interface
+# Factory Functions
 # =============================================================================
 
 """
 Create a complete ZIM simulation setup.
 
 # Arguments  
-- `width::Int`: Lattice width
-- `height::Int`: Lattice height
+- `graph::AbstractEpidemicGraph`: The graph to simulate on
 - `λ::Float64`: Infection rate
 - `μ::Float64`: Kill rate (default: 1.0)
-- `boundary::Symbol`: :absorbing or :periodic (default: :absorbing)  
 - `initial_infected::Union{Symbol, Vector{Int}}`: :center, :random, or node indices
 - `rng_seed::Union{Int, Nothing}`: Random seed (default: nothing)
 
@@ -451,90 +315,48 @@ Create a complete ZIM simulation setup.
 
 # Example
 ```julia  
-julia> zim = create_zim_simulation(100, 100, 2.0)
-julia> results = run_simulation(zim; max_time=100.0)
-julia> println("Survival: ", has_escaped(zim))
+julia> lattice = create_square_lattice(100, 100, :absorbing)
+julia> zim = create_zim_simulation(lattice, 2.0)
+julia> results = run_simulation(zim; max_time=100.0, stop_on_escape=true)
 ```
 """
-function create_zim_simulation(width::Int, height::Int, λ::Float64, μ::Float64 = 1.0;
-                              boundary::Symbol = :absorbing,
+function create_zim_simulation(graph::AbstractEpidemicGraph, λ::Float64, μ::Float64 = 1.0;
                               initial_infected::Union{Symbol, Vector{Int}} = :center,
                               rng_seed::Union{Int, Nothing} = nothing)::ZIMProcess
     
-    # Create lattice
-    lattice = create_square_lattice(width, height, boundary)
-    
-    # Create RNG
+    # Create RNG using utils.jl function
     rng = create_rng(rng_seed)
     
     # Create process
-    process = ZIMProcess(lattice, λ, μ; rng=rng)
+    process = ZIMProcess(graph, λ, μ; rng=rng)
     
-    # Set initial conditions
+    # Determine initial infected nodes
     infected_nodes = if initial_infected == :center
-        [get_center_node(lattice)]
+        if isdefined(graph, :get_center_node) || hasmethod(get_center_node, (typeof(graph),))
+            [get_center_node(graph)]
+        else
+            [num_nodes(graph) ÷ 2]  # Fallback for general graphs
+        end
     elseif initial_infected == :random
-        get_random_nodes(lattice, 1, rng)
+        [rand(rng, 1:num_nodes(graph))]
     else
         initial_infected
     end
     
+    # Initialize the process
     reset!(process, infected_nodes)
     
     return process
 end
 
 """
-Run survival probability analysis across multiple λ values.
-
-# Arguments
-- `λ_values::Vector{Float64}`: Array of λ values to test  
-- `width::Int`: Lattice width (default: 100)
-- `height::Int`: Lattice height (default: 100)
-- `num_simulations::Int`: Number of simulations per λ (default: 100)
-- `μ::Float64`: Kill rate (default: 1.0)
-- `kwargs...`: Additional arguments for create_zim_simulation
-
-# Returns
-- `Dict{Symbol, Any}`: Results including survival probabilities and errors
-
-# Example
-```julia
-julia> λs = 1.0:0.2:3.0
-julia> results = run_survival_analysis(λs; num_simulations=1000)
-julia> # Plot results...
-```
+Convenience function for creating ZIM on square lattices (backward compatibility).
 """
-function run_survival_analysis(λ_values::Vector{Float64};
-                              width::Int = 100, height::Int = 100,
-                              num_simulations::Int = 100, μ::Float64 = 1.0,
-                              kwargs...)::Dict{Symbol, Any}
+function create_zim_simulation(width::Int, height::Int, λ::Float64, μ::Float64 = 1.0;
+                              boundary::Symbol = :absorbing,
+                              initial_infected::Union{Symbol, Vector{Int}} = :center,
+                              rng_seed::Union{Int, Nothing} = nothing)::ZIMProcess
     
-    survival_probs = Float64[]
-    std_errors = Float64[]
-    
-    sizehint!(survival_probs, length(λ_values))
-    sizehint!(std_errors, length(λ_values))
-    
-    for (i, λ) in enumerate(λ_values)
-        println("Testing λ = $(λ) ($(i)/$(length(λ_values)))")
-        
-        # Create simulation
-        zim = create_zim_simulation(width, height, λ, μ; kwargs...)
-        initial_infected = [get_center_node(zim.lattice)]
-        
-        # Run analysis
-        stats = estimate_survival_probability(zim, initial_infected; 
-                                            num_simulations=num_simulations)
-        
-        push!(survival_probs, stats[:survival_probability])
-        push!(std_errors, stats[:survival_std_error])
-    end
-    
-    return Dict{Symbol, Any}(
-        :λ_values => λ_values,
-        :survival_probs => survival_probs,
-        :std_errors => std_errors,
-        :num_simulations => num_simulations
-    )
+    lattice = create_square_lattice(width, height, boundary)
+    return create_zim_simulation(lattice, λ, μ; initial_infected=initial_infected, rng_seed=rng_seed)
 end
