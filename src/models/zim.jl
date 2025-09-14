@@ -83,8 +83,13 @@ function get_total_rate(process::ZIMProcess)::Float64
 end
 
 function sample_active_node(process::ZIMProcess, rng::AbstractRNG)::Int
-    # ZIM uses weighted sampling (your original algorithm)
-    return _weighted_sample_active(process.active_tracker, rng)
+    n_active = length(process.active_tracker.active_nodes)
+
+    # Use performance-optimized function with pre-allocation if active set is large
+    if n_active < 1024
+        return _weighted_sample_active(process.active_tracker, rng)
+    else
+        return _weighted_sample_active_fast(process.active_tracker, n_active, rng)
 end
 
 function step!(process::ZIMProcess)::Float64
