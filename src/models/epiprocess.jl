@@ -181,7 +181,7 @@ function get_statistics(process::AbstractEpidemicProcess)::Dict{Symbol, Any}
 end
 
 """
-Check if infection has reached graph boundary (for lattices).
+Check if infection has reached graph boundary.
 
 # Arguments
 - `process::AbstractEpidemicProcess`: The process
@@ -189,7 +189,7 @@ Check if infection has reached graph boundary (for lattices).
 # Returns
 - `Bool`: true if infection has reached boundary
 """
-function has_reached_boundary(process::AbstractEpidemicProcess)::Bool
+function has_escaped(process::AbstractEpidemicProcess)::Bool
     graph = get_graph(process)
     boundary_nodes = get_boundary_nodes(graph)
     
@@ -250,6 +250,7 @@ julia> println("Final infected: ", results[:infected])
 function run_simulation(process::AbstractEpidemicProcess;
                        max_time::Float64 = Inf,
                        max_steps::Int = 1_000_000,
+                       stop_on_escape::Bool = false,
                        save_history::Bool = false,
                        history_interval::Int = 100)::Dict{Symbol, Any}
     
@@ -271,6 +272,13 @@ function run_simulation(process::AbstractEpidemicProcess;
         
         # Execute one step
         dt = step!(process)
+
+        # Stop when escaped if the option is switched on
+        if stop_on_escape
+            if has_escaped(process)
+                break
+            end
+        end
         
         # Break if no more events possible
         if dt == Inf
@@ -380,10 +388,7 @@ end
 Sample an active node randomly.
 """
 function sample_active_node(tracker::DictActiveTracker, rng::AbstractRNG)::Int
-    if isempty(tracker.active_nodes)
-        throw(ArgumentError("No active nodes to sample from"))
-    end
-    return rand(rng, keys(tracker.active_nodes))
+    error("sample_active_node must be implemented by concrete process type")
 end
 
 """
@@ -391,6 +396,148 @@ Clear all active nodes.
 """
 function clear_active_nodes!(tracker::DictActiveTracker)
     empty!(tracker.active_nodes)
+end
+
+# =============================================================================
+# Internal Sampling Helpers (Not Exported)
+# =============================================================================
+# Add these functions to epiprocess.jl, after the DictActiveTracker methods
+
+"""
+Uniform sampling from active nodes.
+
+Selects an active node uniformly at random, regardless of neighbor counts.
+Used by processes where all active nodes have equal event rates.
+
+# Arguments
+- `tracker::DictActiveTracker`: Active node tracker
+- `rng::AbstractRNG`: Random number generator
+
+# Returns
+- `Int`: Randomly selected active node ID
+
+# Throws
+- `ArgumentError`: If no active nodes available
+"""
+function _uniform_sample_active(tracker::DictActiveTracker, rng::AbstractRNG)::Int
+    if isempty(tracker.active_nodes)
+        throw(ArgumentError("No active nodes to sample from"))
+    end
+    
+    # Simple uniform sampling from dictionary keys
+    active_nodes = collect(keys(tracker.active_nodes))
+    return active_nodes[rand(rng, 1:length(active_nodes))]
+end
+
+"""
+Weighted sampling from active nodes based on susceptible neighbor counts.
+
+Implements efficient weighted sampling where the probability of selecting a node
+is proportional to its number of susceptible neighbors. This is critical for
+processes like ZIM where event rates depend on neighbor counts.
+
+Uses the standard weighted sampling algorithm:
+1. Calculate cumulative weights
+2. Sample uniform random value in [0, total_weight]
+3. Binary search to find selected node
+
+# Arguments
+- `tracker::DictActiveTracker`: Active node tracker with neighbor counts
+- `rng::AbstractRNG`: Random number generator
+
+# Returns
+- `Int`: Selected node ID (weighted by neighbor count)
+
+# Throws
+- `ArgumentError`: If no active nodes available
+"""
+function _weighted_sample_active(tracker::DictActiveTracker, rng::AbstractRNG)::Int
+    if isempty(tracker.active_nodes)
+        throw(ArgumentError("No active nodes to sample from"))
+    end
+    
+    # Special case: single active node
+    if length(tracker.active_nodes) == 1
+        return first(keys(tracker.active_nodes))
+    end
+    
+    # Get total weight (sum of all susceptible neighbor counts)
+    total_weight = get_total_boundary(tracker)
+    
+    if total_weight <= 0
+        throw(ArgumentError("Total weight is zero - no valid nodes to sample"))
+    end
+    
+    # Sample a random value in [0, total_weight)
+    random_value = rand(rng) * total_weight
+    
+    # Find which node this corresponds to using cumulative weights
+    cumulative_weight = 0.0
+    for (node_id, weight) in tracker.active_nodes
+        cumulative_weight += weight
+        if random_value < cumulative_weight
+            return node_id
+        end
+    end
+    
+    # Shouldn't reach here, but return last node as fallback
+    # (can happen due to floating point rounding)
+    return last(keys(tracker.active_nodes))
+end
+
+"""
+Alternative weighted sampling implementation using pre-allocated arrays.
+
+More efficient for very large numbers of active nodes, but requires allocation.
+Use this version if you have thousands of active nodes.
+
+# Arguments
+- `tracker::DictActiveTracker`: Active node tracker with neighbor counts
+- `n_active::Int`: Number of active nodes to use for pre-allocation 
+- `rng::AbstractRNG`: Random number generator
+
+# Returns
+- `Int`: Selected node ID (weighted by neighbor count)
+"""
+function _weighted_sample_active_fast(tracker::DictActiveTracker, n_active::Int, rng::AbstractRNG)::Int
+    if n_active == 0
+        throw(ArgumentError("No active nodes to sample from"))
+    end
+    
+    if n_active == 1
+        return first(keys(tracker.active_nodes))
+    end
+    
+    # Pre-allocate arrays for better performance with many nodes
+    nodes = Vector{Int}(undef, n_active)
+    weights = Vector{Int}(undef, n_active)
+    
+    # Fill arrays
+    i = 1
+    for (node_id, weight) in tracker.active_nodes
+        nodes[i] = node_id
+        weights[i] = weight
+        i += 1
+    end
+    
+    # Calculate cumulative weights
+    cumsum_weights = cumsum(weights)
+    total_weight = cumsum_weights[end]
+    
+    if total_weight <= 0
+        throw(ArgumentError("Total weight is zero - no valid nodes to sample"))
+    end
+    
+    # Binary search for efficiency
+    random_value = rand(rng) * total_weight
+    idx = searchsortedfirst(cumsum_weights, random_value)
+    
+    # Handle edge case where random_value == total_weight
+    if idx > n_active
+        idx = n_active
+    end
+    
+    return nodes[idx]
 end
 
 # =============================================================================
