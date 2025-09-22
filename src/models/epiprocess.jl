@@ -249,7 +249,7 @@ julia> println("Final infected: ", results[:infected])
 """
 function run_simulation(process::AbstractEpidemicProcess;
                        max_time::Float64 = Inf,
-                       max_steps::Int = 1_000_000,
+                       max_steps::Int = typemax(Int),
                        stop_on_escape::Bool = false,
                        save_history::Bool = false,
                        history_interval::Int = 100)::Dict{Symbol, Any}
