@@ -37,6 +37,7 @@ All state operations use primitive Int8 arrays for maximum performance.
 mutable struct SquareLattice <: AbstractEpidemicGraph
     width::Int
     height::Int
+    n_nodes::Int
     boundary::BoundaryCondition
     states::Vector{Int8}
     boundary_nodes::Vector{Int}  # Pre-computed for efficiency
@@ -59,7 +60,7 @@ mutable struct SquareLattice <: AbstractEpidemicGraph
             Int[]  # No boundary concept for periodic
         end
         
-        new(width, height, boundary, states, boundary_nodes)
+        new(width, height, n_nodes, boundary, states, boundary_nodes)
     end
 end
 
@@ -67,8 +68,8 @@ end
 # Core Interface Implementation (Required Methods)
 # =============================================================================
 
-function num_nodes(lattice::SquareLattice)::Int
-    return lattice.width * lattice.height
+@inline function num_nodes(lattice::SquareLattice)::Int
+    return lattice.n_nodes
 end
 
 function node_states_raw(lattice::SquareLattice)::Vector{Int8}
