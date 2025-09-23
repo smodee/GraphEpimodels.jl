@@ -39,16 +39,6 @@ Examples:
 """
 abstract type InteractiveVisualizer <: AbstractVisualizer end
 
-"""
-Abstract type for time-series visualizers for temporal data.
-
-Examples:  
-- Survival probability curves
-- Parameter sweep plots
-- Phase diagrams
-"""
-abstract type TimeSeriesVisualizer <: AbstractVisualizer end
-
 # =============================================================================
 # Required Interface Methods (must be implemented by all visualizer types)
 # =============================================================================
