@@ -300,12 +300,3 @@ function get_active_edges(graph::AbstractEpidemicGraph,
     
     return active_edges
 end
-
-# =============================================================================
-# Factory Functions for Common Graph Types
-# =============================================================================
-
-# Note: Concrete implementations are in separate files:
-# - adjacency.jl: AdjacencyGraph and related factory functions  
-# - lattice.jl: SquareLattice, TorusLattice, etc.
-# - networks.jl: Random graphs, small-world networks, etc.
