@@ -86,7 +86,7 @@ export SIRLikeProcess, ContactLikeProcess, VoterLikeProcess
 # Core process interface functions
 export get_graph, step!, reset!
 export current_time, step_count, is_active, get_total_rate
-export get_statistics, has_reached_boundary, get_cluster_size
+export get_statistics, has_escaped, get_cluster_size
 export run_simulation
 
 # =============================================================================
