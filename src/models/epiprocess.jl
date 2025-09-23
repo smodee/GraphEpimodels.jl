@@ -296,6 +296,8 @@ function run_simulation(process::AbstractEpidemicProcess;
         final_stats[:termination_reason] = :max_steps_reached
     elseif !is_active(process)
         final_stats[:termination_reason] = :no_active_events
+    elseif has_escaped(process)
+        final_stats[:termination_reason] = :escaped
     else
         final_stats[:termination_reason] = :unknown
     end
