@@ -2,13 +2,13 @@
 analysis/survival_analysis.jl
 
 High-performance Monte Carlo survival probability estimation for epidemic processes.
-Supports dynamic load balancing, factory-based process creation, and parameter sweeps.
+Uses threading for parallelization with minimal memory overhead and clean interface.
 
 Primary use case: Estimating survival probabilities for the Zombie Infection Model (ZIM)
 and other epidemic processes on lattices.
 """
 
-using Distributed, ProgressMeter
+using ProgressMeter
 
 # =============================================================================
 # Analysis Modes
@@ -20,7 +20,7 @@ using Distributed, ProgressMeter
 end
 
 # =============================================================================
-# Survival Criteria (Lightweight)
+# Survival Criteria
 # =============================================================================
 
 """Abstract type for survival criteria"""
@@ -62,11 +62,11 @@ end
 end
 
 # =============================================================================
-# Core High-Performance Survival Analysis
+# Core Survival Analysis Functions
 # =============================================================================
 
 """
-Estimate survival probability using factory functions for maximum performance.
+Estimate survival probability using threading for maximum performance with minimal memory.
 
 # Arguments
 - `process_factory::Function`: Function that creates a fresh process (no arguments)
@@ -76,7 +76,7 @@ Estimate survival probability using factory functions for maximum performance.
 - `max_time::Float64`: Maximum time per simulation (default: Inf)
 - `max_steps::Int`: Maximum steps per simulation (default: typemax(Int))
 - `mode::AnalysisMode`: Data collection mode (MINIMAL or DETAILED)
-- `use_parallel::Bool`: Use parallel processing (default: auto-detect, reserve 2 cores)
+- `use_threading::Bool`: Use threading for parallelization (default: true)
 
 # Returns
 - `Dict{Symbol, Any}`: Survival statistics (minimal or detailed based on mode)
@@ -93,7 +93,7 @@ result = estimate_survival_probability(factory, [center_node]; mode=DETAILED)
 # Custom factory with parameters
 λ, width, height = 2.5, 200, 200
 factory = () -> create_zim_simulation(width, height, λ; rng_seed=rand(UInt))
-result = estimate_survival_probability(factory, [center_node])
+result = estimate_survival_probability(factory, [center_node]; num_simulations=10000)
 ```
 """
 function estimate_survival_probability(
@@ -104,7 +104,7 @@ function estimate_survival_probability(
     max_time::Float64 = Inf,
     max_steps::Int = typemax(Int),
     mode::AnalysisMode = MINIMAL,
-    use_parallel::Bool = nworkers() > 0  # Simplified: use parallel if any workers available
+    use_threading::Bool = Threads.nthreads() > 1
 )::Dict{Symbol, Any}
 
     # Validation for PersistenceCriterion
@@ -112,8 +112,8 @@ function estimate_survival_probability(
         throw(ArgumentError("PersistenceCriterion requires finite max_time"))
     end
 
-    if use_parallel && nworkers() > 0
-        return _estimate_survival_parallel(
+    if use_threading && Threads.nthreads() > 1
+        return _estimate_survival_threaded(
             process_factory, initial_infected, criterion,
             num_simulations, max_time, max_steps, mode
         )
@@ -125,7 +125,141 @@ function estimate_survival_probability(
     end
 end
 
-"""Serial implementation - creates one process and reuses it"""
+"""Threading implementation with thread-local process reuse for maximum efficiency"""
+function _estimate_survival_threaded(
+    process_factory::Function,
+    initial_infected::Vector{Int},
+    criterion::SurvivalCriterion,
+    num_simulations::Int,
+    max_time::Float64,
+    max_steps::Int,
+    mode::AnalysisMode
+)::Dict{Symbol, Any}
+
+    if mode == MINIMAL
+        # Minimal mode: just count survivals
+        survival_count = Threads.Atomic{Int}(0)
+        
+        @showprogress "Survival analysis (threaded)..." Threads.@threads for i in 1:num_simulations
+            # Thread-local process - create once per thread, reuse across simulations
+            thread_process = get_thread_local_process(process_factory)
+            
+            # Reset and run simulation (much faster than creating new process)
+            reset!(thread_process, initial_infected)
+            sim_results = run_simulation(thread_process; max_time=max_time, max_steps=max_steps)
+            
+            # Thread-safe increment if survived
+            if evaluate_survival(thread_process, criterion, sim_results)
+                Threads.atomic_add!(survival_count, 1)
+            end
+        end
+        
+        survival_prob = survival_count[] / num_simulations
+        survival_se = sqrt(survival_prob * (1 - survival_prob) / num_simulations)
+        
+        return Dict{Symbol, Any}(
+            :survival_probability => survival_prob,
+            :survival_std_error => survival_se,
+            :num_survivals => survival_count[],
+            :num_extinctions => num_simulations - survival_count[]
+        )
+        
+    else  # DETAILED mode
+        # Pre-allocate results arrays
+        results = Vector{NamedTuple{(:survived, :time, :size), Tuple{Bool, Float64, Int}}}(undef, num_simulations)
+        
+        @showprogress "Detailed survival analysis (threaded)..." Threads.@threads for i in 1:num_simulations
+            # Thread-local process - create once per thread, reuse across simulations
+            thread_process = get_thread_local_process(process_factory)
+            
+            # Reset and run simulation
+            reset!(thread_process, initial_infected)
+            sim_results = run_simulation(thread_process; max_time=max_time, max_steps=max_steps)
+            
+            # Collect detailed data
+            survived = evaluate_survival(thread_process, criterion, sim_results)
+            survival_time = survived ? sim_results[:time] : NaN
+            final_size = get_cluster_size(thread_process)
+            
+            results[i] = (survived=survived, time=survival_time, size=final_size)
+        end
+        
+        # Process collected results
+        survival_count = count(r -> r.survived, results)
+        survival_times = [r.time for r in results if r.survived && !isnan(r.time)]
+        final_sizes = [r.size for r in results]
+        
+        survival_prob = survival_count / num_simulations
+        survival_se = sqrt(survival_prob * (1 - survival_prob) / num_simulations)
+        
+        return Dict{Symbol, Any}(
+            :survival_probability => survival_prob,
+            :survival_std_error => survival_se,
+            :num_survivals => survival_count,
+            :num_extinctions => num_simulations - survival_count,
+            :mean_survival_time => length(survival_times) > 0 ? mean(survival_times) : NaN,
+            :survival_times => survival_times,
+            :mean_final_size => mean(final_sizes),
+            :final_sizes => final_sizes
+        )
+    end
+end
+
+# =============================================================================
+# Thread-Local Process Management
+# =============================================================================
+
+"""
+Thread-local storage for epidemic processes.
+Each thread gets its own process that's reused across simulations.
+"""
+const THREAD_LOCAL_PROCESSES = Dict{Tuple{Int, UInt64}, AbstractEpidemicProcess}()
+const THREAD_PROCESS_LOCK = Threads.SpinLock()
+
+"""
+Get or create a thread-local process for maximum efficiency.
+
+Each thread creates one process and reuses it across all its simulations.
+Uses (thread_id, factory_hash) as key to handle different factory functions.
+"""
+function get_thread_local_process(process_factory::Function)::AbstractEpidemicProcess
+    thread_id = Threads.threadid()
+    factory_hash = hash(process_factory)  # Different factories get different processes
+    key = (thread_id, factory_hash)
+    
+    # Try to get existing process (lockless read for performance)
+    existing_process = get(THREAD_LOCAL_PROCESSES, key, nothing)
+    if existing_process !== nothing
+        return existing_process
+    end
+    
+    # Need to create new process - use lock for thread safety
+    Threads.lock(THREAD_PROCESS_LOCK) do
+        # Double-check pattern - another thread might have created it
+        existing_process = get(THREAD_LOCAL_PROCESSES, key, nothing)
+        if existing_process !== nothing
+            return existing_process
+        end
+        
+        # Create new process for this thread
+        new_process = process_factory()
+        THREAD_LOCAL_PROCESSES[key] = new_process
+        return new_process
+    end
+end
+
+"""
+Clear all thread-local processes (useful for cleanup or memory management).
+"""
+function clear_thread_local_processes!()
+    Threads.lock(THREAD_PROCESS_LOCK) do
+        empty!(THREAD_LOCAL_PROCESSES)
+        GC.gc()  # Force garbage collection to free memory
+    end
+    @info "Cleared all thread-local processes"
+end
+
+"""Serial implementation - no parallelization"""
 function _estimate_survival_serial(
     process_factory::Function,
     initial_infected::Vector{Int},
@@ -150,20 +284,20 @@ function _estimate_survival_serial(
         sizehint!(final_sizes, num_simulations)
     end
     
-    @showprogress 1 "Survival analysis..." for i in 1:num_simulations
+    @showprogress "Survival analysis (serial)..." for i in 1:num_simulations
         # Reset to initial state
         reset!(process, initial_infected)
         
         # Run simulation
-        results = run_simulation(process; max_time=max_time, max_steps=max_steps)
+        sim_results = run_simulation(process; max_time=max_time, max_steps=max_steps)
         
-        # Evaluate survival (inlined)
-        survived = evaluate_survival(process, criterion, results)
+        # Evaluate survival
+        survived = evaluate_survival(process, criterion, sim_results)
         
         if survived
             survival_count += 1
             if mode == DETAILED
-                push!(survival_times, results[:time])
+                push!(survival_times, sim_results[:time])
             end
         end
         
@@ -195,101 +329,18 @@ function _estimate_survival_serial(
     return result
 end
 
-"""
-Parallel implementation using @distributed for clean automatic parallelization.
-
-Uses different reduction strategies based on analysis mode:
-- MINIMAL: Count survivals with (+) reduction 
-- DETAILED: Collect all results with (vcat) reduction
-"""
-function _estimate_survival_parallel(
-    process_factory::Function,
-    initial_infected::Vector{Int},
-    criterion::SurvivalCriterion,
-    num_simulations::Int,
-    max_time::Float64,
-    max_steps::Int,
-    mode::AnalysisMode
-)::Dict{Symbol, Any}
-
-    if mode == MINIMAL
-        # Minimal mode: just count survivals using (+) reduction
-        survival_count = @showprogress "@distributed survival analysis..." @distributed (+) for i in 1:num_simulations
-            # Create fresh process
-            process = process_factory()
-            
-            # Reset and run simulation
-            reset!(process, initial_infected)
-            sim_results = run_simulation(process; max_time=max_time, max_steps=max_steps)
-            
-            # Return 1 if survived, 0 if extinct (gets summed up)
-            evaluate_survival(process, criterion, sim_results) ? 1 : 0
-        end
-        
-        # Compute statistics
-        survival_prob = survival_count / num_simulations
-        survival_se = sqrt(survival_prob * (1 - survival_prob) / num_simulations)
-        
-        return Dict{Symbol, Any}(
-            :survival_probability => survival_prob,
-            :survival_std_error => survival_se,
-            :num_survivals => survival_count,
-            :num_extinctions => num_simulations - survival_count
-        )
-        
-    else  # DETAILED mode
-        # Detailed mode: collect all results using (vcat) reduction
-        all_results = @showprogress "@distributed detailed analysis..." @distributed (vcat) for i in 1:num_simulations
-            # Create fresh process
-            process = process_factory()
-            
-            # Reset and run simulation
-            reset!(process, initial_infected)
-            sim_results = run_simulation(process; max_time=max_time, max_steps=max_steps)
-            
-            # Evaluate survival and collect detailed data
-            survived = evaluate_survival(process, criterion, sim_results)
-            survival_time = survived ? sim_results[:time] : NaN
-            final_size = get_cluster_size(process)
-            
-            # Return vector with one detailed result (gets concatenated)
-            [(survived=survived, time=survival_time, size=final_size)]
-        end
-        
-        # Process collected results
-        survival_count = count(r -> r.survived, all_results)
-        survival_times = [r.time for r in all_results if r.survived && !isnan(r.time)]
-        final_sizes = [r.size for r in all_results]
-        
-        survival_prob = survival_count / num_simulations
-        survival_se = sqrt(survival_prob * (1 - survival_prob) / num_simulations)
-        
-        return Dict{Symbol, Any}(
-            :survival_probability => survival_prob,
-            :survival_std_error => survival_se,
-            :num_survivals => survival_count,
-            :num_extinctions => num_simulations - survival_count,
-            :mean_survival_time => length(survival_times) > 0 ? mean(survival_times) : NaN,
-            :survival_times => survival_times,
-            :mean_final_size => mean(final_sizes),
-            :final_sizes => final_sizes
-        )
-    end
-end
-
 # =============================================================================
-# Parameter Sweep (Performance Optimized)
+# Parameter Sweep Functions
 # =============================================================================
 
 """
-High-performance parameter sweep using factory functions.
+High-performance parameter sweep using threading.
 
 # Arguments  
 - `parameter_values::Vector{Float64}`: Parameter values to test
 - `factory_generator::Function`: Function that takes parameter and returns factory function
 - `initial_infected::Vector{Int}`: Initial infected nodes
 - `criterion::SurvivalCriterion`: Survival criterion
-- `sweep_parallel::Bool`: Parallelize across parameters vs simulations
 - `kwargs...`: Additional arguments passed to estimate_survival_probability
 
 # Returns
@@ -307,7 +358,7 @@ sweep = run_parameter_sweep(
 # More complex factory with multiple parameters
 sweep = run_parameter_sweep(
     [1.0:0.1:3.0...],
-    λ -> (() -> create_zim_simulation(200, 200, λ; mu=1.5, rng_seed=rand(UInt))),
+    λ -> (() -> create_zim_simulation(200, 200, λ, 1.5; rng_seed=rand(UInt))),
     [center_node];
     mode=DETAILED
 )
@@ -318,39 +369,21 @@ function run_parameter_sweep(
     factory_generator::Function,
     initial_infected::Vector{Int},
     criterion::SurvivalCriterion = EscapeCriterion();
-    sweep_parallel::Bool = false,  # Parallelize across parameters vs simulations
     kwargs...
 )::Dict{Symbol, Any}
     
     n_params = length(parameter_values)
+    survival_probs = Vector{Float64}(undef, n_params)
+    std_errors = Vector{Float64}(undef, n_params)
     
-    if sweep_parallel && nprocs() > 1
-        # Parallelize across parameters (each parameter uses serial simulation analysis)
-        results = pmap(parameter_values) do param
-            factory = factory_generator(param)
-            estimate_survival_probability(
-                factory, initial_infected, criterion; 
-                use_parallel=false,  # Don't double-parallelize
-                kwargs...
-            )
-        end
+    @showprogress "Parameter sweep..." for (i, param) in enumerate(parameter_values)
+        factory = factory_generator(param)
+        results = estimate_survival_probability(
+            factory, initial_infected, criterion; kwargs...
+        )
         
-        survival_probs = [r[:survival_probability] for r in results]
-        std_errors = [r[:survival_std_error] for r in results]
-    else
-        # Serial parameter sweep, but each parameter analysis can be parallel
-        survival_probs = Vector{Float64}(undef, n_params)
-        std_errors = Vector{Float64}(undef, n_params)
-        
-        @showprogress 1 "Parameter sweep..." for (i, param) in enumerate(parameter_values)
-            factory = factory_generator(param)
-            results = estimate_survival_probability(
-                factory, initial_infected, criterion; kwargs...
-            )
-            
-            survival_probs[i] = results[:survival_probability]
-            std_errors[i] = results[:survival_std_error]
-        end
+        survival_probs[i] = results[:survival_probability]
+        std_errors[i] = results[:survival_std_error]
     end
     
     return Dict{Symbol, Any}(
@@ -359,10 +392,6 @@ function run_parameter_sweep(
         :std_errors => std_errors
     )
 end
-
-# =============================================================================
-# Convenience Functions for Common Use Cases
-# =============================================================================
 
 """
 Convenience function for ZIM parameter sweeps with standard setup.
@@ -390,7 +419,6 @@ function run_zim_survival_analysis(
 )::Dict{Symbol, Any}
     
     # Create factory generator for ZIM processes
-    # Note: create_zim_simulation takes μ as positional parameter, not keyword
     factory_generator = λ -> (() -> create_zim_simulation(width, height, λ, mu))
     
     # Determine initial infected nodes
@@ -413,9 +441,50 @@ function run_zim_survival_analysis(
 end
 
 # =============================================================================
+# Threading Information and Setup Helpers
+# =============================================================================
+
+"""
+Check current threading setup and provide guidance.
+"""
+function check_threading_setup()
+    nthreads = Threads.nthreads()
+    println("Julia threading setup:")
+    println("  Current threads: $nthreads")
+    println("  System CPU threads: $(Sys.CPU_THREADS)")
+    
+    if nthreads == 1
+        println("\n⚠️  Threading disabled (only 1 thread)")
+        println("To enable threading:")
+        println("  1. Start Julia with: julia --threads=4")
+        println("  2. Or set environment: JULIA_NUM_THREADS=4")
+        println("  3. Or set threads in startup.jl")
+    else
+        println("✅ Threading enabled - survival analysis will be parallelized")
+    end
+    
+    return nthreads
+end
+
+"""
+Get recommended number of threads for survival analysis.
+"""
+function get_recommended_threads()::Int
+    total_threads = Sys.CPU_THREADS
+    if total_threads <= 2
+        return total_threads
+    elseif total_threads <= 8
+        return total_threads - 1  # Reserve 1 for system
+    else
+        return min(8, total_threads - 2)  # Reserve 2, cap at 8
+    end
+end
+
+# =============================================================================
 # Exports
 # =============================================================================
 
 export AnalysisMode, MINIMAL, DETAILED
 export SurvivalCriterion, EscapeCriterion, PersistenceCriterion, ThresholdCriterion
 export estimate_survival_probability, run_parameter_sweep, run_zim_survival_analysis
+export check_threading_setup, get_recommended_threads, clear_thread_local_processes!
