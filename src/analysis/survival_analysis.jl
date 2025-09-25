@@ -1,0 +1,425 @@
+"""
+analysis/survival_analysis.jl
+
+High-performance Monte Carlo survival probability estimation for epidemic processes.
+Supports dynamic load balancing, factory-based process creation, and parameter sweeps.
+
+Primary use case: Estimating survival probabilities for the Zombie Infection Model (ZIM)
+and other epidemic processes on lattices.
+"""
+
+using Distributed, ProgressMeter
+
+# =============================================================================
+# Analysis Modes
+# =============================================================================
+
+@enum AnalysisMode begin
+    MINIMAL     # Only survival probability and count (fastest)
+    DETAILED    # Include survival times and final sizes (comprehensive)
+end
+
+# =============================================================================
+# Survival Criteria (Lightweight)
+# =============================================================================
+
+"""Abstract type for survival criteria"""
+abstract type SurvivalCriterion end
+
+struct EscapeCriterion <: SurvivalCriterion end
+struct PersistenceCriterion <: SurvivalCriterion end  
+struct ThresholdCriterion <: SurvivalCriterion
+    threshold::Int
+end
+
+# =============================================================================
+# High-Performance Survival Evaluation
+# =============================================================================
+
+"""Evaluate survival - inlined for performance"""
+@inline function evaluate_survival(
+    process::AbstractEpidemicProcess, 
+    ::EscapeCriterion, 
+    results::Dict{Symbol, Any}
+)::Bool
+    return has_reached_boundary(process)
+end
+
+@inline function evaluate_survival(
+    process::AbstractEpidemicProcess,
+    ::PersistenceCriterion,
+    results::Dict{Symbol, Any}  
+)::Bool
+    return is_active(process)
+end
+
+@inline function evaluate_survival(
+    process::AbstractEpidemicProcess,
+    criterion::ThresholdCriterion,
+    results::Dict{Symbol, Any}
+)::Bool
+    return get_cluster_size(process) >= criterion.threshold
+end
+
+# =============================================================================
+# Core High-Performance Survival Analysis
+# =============================================================================
+
+"""
+Estimate survival probability using factory functions for maximum performance.
+
+# Arguments
+- `process_factory::Function`: Function that creates a fresh process (no arguments)
+- `initial_infected::Vector{Int}`: Initial infected nodes
+- `criterion::SurvivalCriterion`: How to define survival
+- `num_simulations::Int`: Number of Monte Carlo runs
+- `max_time::Float64`: Maximum time per simulation (default: Inf)
+- `max_steps::Int`: Maximum steps per simulation (default: typemax(Int))
+- `mode::AnalysisMode`: Data collection mode (MINIMAL or DETAILED)
+- `use_parallel::Bool`: Use parallel processing (default: auto-detect, reserve 2 cores)
+
+# Returns
+- `Dict{Symbol, Any}`: Survival statistics (minimal or detailed based on mode)
+
+# Examples
+```julia
+# Simple ZIM analysis
+factory = () -> create_zim_simulation(100, 100, 2.0)
+result = estimate_survival_probability(factory, [center_node])
+
+# With detailed data collection
+result = estimate_survival_probability(factory, [center_node]; mode=DETAILED)
+
+# Custom factory with parameters
+λ, width, height = 2.5, 200, 200
+factory = () -> create_zim_simulation(width, height, λ; rng_seed=rand(UInt))
+result = estimate_survival_probability(factory, [center_node])
+```
+"""
+function estimate_survival_probability(
+    process_factory::Function,
+    initial_infected::Vector{Int},
+    criterion::SurvivalCriterion = EscapeCriterion();
+    num_simulations::Int = 1000,
+    max_time::Float64 = Inf,
+    max_steps::Int = typemax(Int),
+    mode::AnalysisMode = MINIMAL,
+    use_parallel::Bool = nprocs() > 3  # Reserve 2 cores by default
+)::Dict{Symbol, Any}
+
+    # Validation for PersistenceCriterion
+    if criterion isa PersistenceCriterion && !isfinite(max_time)
+        throw(ArgumentError("PersistenceCriterion requires finite max_time"))
+    end
+
+    if use_parallel && nprocs() > 1
+        return _estimate_survival_parallel(
+            process_factory, initial_infected, criterion,
+            num_simulations, max_time, max_steps, mode
+        )
+    else
+        return _estimate_survival_serial(
+            process_factory, initial_infected, criterion,
+            num_simulations, max_time, max_steps, mode
+        )
+    end
+end
+
+"""Serial implementation - creates one process and reuses it"""
+function _estimate_survival_serial(
+    process_factory::Function,
+    initial_infected::Vector{Int},
+    criterion::SurvivalCriterion,
+    num_simulations::Int,
+    max_time::Float64,
+    max_steps::Int,
+    mode::AnalysisMode
+)::Dict{Symbol, Any}
+
+    # Create process once for serial execution
+    process = process_factory()
+
+    # Data collection based on mode
+    survival_count = 0
+    survival_times = mode == DETAILED ? Float64[] : nothing
+    final_sizes = mode == DETAILED ? Int[] : nothing
+    
+    # Pre-allocate for detailed mode
+    if mode == DETAILED
+        sizehint!(survival_times, num_simulations ÷ 2)  # Rough estimate
+        sizehint!(final_sizes, num_simulations)
+    end
+    
+    @showprogress 1 "Survival analysis..." for i in 1:num_simulations
+        # Reset to initial state
+        reset!(process, initial_infected)
+        
+        # Run simulation
+        results = run_simulation(process; max_time=max_time, max_steps=max_steps)
+        
+        # Evaluate survival (inlined)
+        survived = evaluate_survival(process, criterion, results)
+        
+        if survived
+            survival_count += 1
+            if mode == DETAILED
+                push!(survival_times, results[:time])
+            end
+        end
+        
+        if mode == DETAILED
+            push!(final_sizes, get_cluster_size(process))
+        end
+    end
+    
+    # Compute core statistics
+    survival_prob = survival_count / num_simulations
+    survival_se = sqrt(survival_prob * (1 - survival_prob) / num_simulations)
+    
+    # Build results dict
+    result = Dict{Symbol, Any}(
+        :survival_probability => survival_prob,
+        :survival_std_error => survival_se,
+        :num_survivals => survival_count,
+        :num_extinctions => num_simulations - survival_count
+    )
+    
+    # Add detailed data if requested
+    if mode == DETAILED
+        result[:mean_survival_time] = length(survival_times) > 0 ? mean(survival_times) : NaN
+        result[:survival_times] = survival_times
+        result[:mean_final_size] = mean(final_sizes)
+        result[:final_sizes] = final_sizes
+    end
+    
+    return result
+end
+
+"""Parallel implementation using pmap with process reuse per worker"""
+function _estimate_survival_parallel(
+    process_factory::Function,
+    initial_infected::Vector{Int},
+    criterion::SurvivalCriterion,
+    num_simulations::Int,
+    max_time::Float64,
+    max_steps::Int,
+    mode::AnalysisMode
+)::Dict{Symbol, Any}
+
+    # Initialize one process per worker
+    @everywhere begin
+        # Clear any existing worker process
+        if @isdefined(WORKER_PROCESS)
+            WORKER_PROCESS = nothing
+            GC.gc()  # Force cleanup
+        end
+        
+        # Each worker creates its own process
+        WORKER_PROCESS = $(process_factory)()
+    end
+    
+    try
+        # Use pmap for automatic dynamic load balancing
+        # Each simulation reuses the worker's process
+        simulation_results = @showprogress "Survival analysis (parallel)..." pmap(1:num_simulations) do sim_idx
+            # Reuse the worker's existing process
+            process = WORKER_PROCESS
+            
+            # Reset to initial state (much faster than creating new process)
+            reset!(process, initial_infected)
+            
+            # Run simulation
+            sim_results = run_simulation(process; max_time=max_time, max_steps=max_steps)
+            
+            # Evaluate survival (inlined)
+            survived = evaluate_survival(process, criterion, sim_results)
+            
+            # Collect data based on mode
+            if mode == DETAILED
+                survival_time = survived ? sim_results[:time] : NaN
+                final_size = get_cluster_size(process)
+                return (survived=survived, time=survival_time, size=final_size)
+            else
+                return (survived=survived,)
+            end
+        end
+        
+    finally
+        # Clean up worker processes
+        @everywhere begin
+            if @isdefined(WORKER_PROCESS)
+                WORKER_PROCESS = nothing
+                GC.gc()
+            end
+        end
+    end
+    
+    # Aggregate results from all simulations
+    survival_count = count(r -> r.survived, simulation_results)
+    
+    survival_prob = survival_count / num_simulations
+    survival_se = sqrt(survival_prob * (1 - survival_prob) / num_simulations)
+    
+    result = Dict{Symbol, Any}(
+        :survival_probability => survival_prob,
+        :survival_std_error => survival_se,
+        :num_survivals => survival_count,
+        :num_extinctions => num_simulations - survival_count
+    )
+    
+    # Aggregate detailed data if collected
+    if mode == DETAILED
+        survival_times = [r.time for r in simulation_results if r.survived && !isnan(r.time)]
+        final_sizes = [r.size for r in simulation_results]
+        
+        result[:mean_survival_time] = length(survival_times) > 0 ? mean(survival_times) : NaN
+        result[:survival_times] = survival_times
+        result[:mean_final_size] = mean(final_sizes)
+        result[:final_sizes] = final_sizes
+    end
+    
+    return result
+end
+
+# =============================================================================
+# Parameter Sweep (Performance Optimized)
+# =============================================================================
+
+"""
+High-performance parameter sweep using factory functions.
+
+# Arguments  
+- `parameter_values::Vector{Float64}`: Parameter values to test
+- `factory_generator::Function`: Function that takes parameter and returns factory function
+- `initial_infected::Vector{Int}`: Initial infected nodes
+- `criterion::SurvivalCriterion`: Survival criterion
+- `sweep_parallel::Bool`: Parallelize across parameters vs simulations
+- `kwargs...`: Additional arguments passed to estimate_survival_probability
+
+# Returns
+- Parameter sweep results with survival curves
+
+# Examples
+```julia
+# ZIM lambda sweep
+sweep = run_parameter_sweep(
+    [1.5, 2.0, 2.5],
+    λ -> (() -> create_zim_simulation(100, 100, λ)),
+    [center_node]
+)
+
+# More complex factory with multiple parameters
+sweep = run_parameter_sweep(
+    [1.0:0.1:3.0...],
+    λ -> (() -> create_zim_simulation(200, 200, λ; mu=1.5, rng_seed=rand(UInt))),
+    [center_node];
+    mode=DETAILED
+)
+```
+"""
+function run_parameter_sweep(
+    parameter_values::Vector{Float64},
+    factory_generator::Function,
+    initial_infected::Vector{Int},
+    criterion::SurvivalCriterion = EscapeCriterion();
+    sweep_parallel::Bool = false,  # Parallelize across parameters vs simulations
+    kwargs...
+)::Dict{Symbol, Any}
+    
+    n_params = length(parameter_values)
+    
+    if sweep_parallel && nprocs() > 1
+        # Parallelize across parameters (each parameter uses serial simulation analysis)
+        results = pmap(parameter_values) do param
+            factory = factory_generator(param)
+            estimate_survival_probability(
+                factory, initial_infected, criterion; 
+                use_parallel=false,  # Don't double-parallelize
+                kwargs...
+            )
+        end
+        
+        survival_probs = [r[:survival_probability] for r in results]
+        std_errors = [r[:survival_std_error] for r in results]
+    else
+        # Serial parameter sweep, but each parameter analysis can be parallel
+        survival_probs = Vector{Float64}(undef, n_params)
+        std_errors = Vector{Float64}(undef, n_params)
+        
+        @showprogress 1 "Parameter sweep..." for (i, param) in enumerate(parameter_values)
+            factory = factory_generator(param)
+            results = estimate_survival_probability(
+                factory, initial_infected, criterion; kwargs...
+            )
+            
+            survival_probs[i] = results[:survival_probability]
+            std_errors[i] = results[:survival_std_error]
+        end
+    end
+    
+    return Dict{Symbol, Any}(
+        :parameter_values => parameter_values,
+        :survival_probabilities => survival_probs,
+        :std_errors => std_errors
+    )
+end
+
+# =============================================================================
+# Convenience Functions for Common Use Cases
+# =============================================================================
+
+"""
+Convenience function for ZIM parameter sweeps with standard setup.
+
+# Arguments
+- `lambda_values::Vector{Float64}`: Lambda values to test
+- `width::Int`: Lattice width  
+- `height::Int`: Lattice height
+- `mu::Float64`: Kill rate (default: 1.0)
+- `initial_location::Symbol`: Where to start infection (:center, :corner, :edge)
+- `kwargs...`: Additional arguments passed to estimate_survival_probability
+
+# Example
+```julia
+sweep = run_zim_survival_analysis([1.5, 2.0, 2.5], 100, 100; mode=DETAILED)
+```
+"""
+function run_zim_survival_analysis(
+    lambda_values::Vector{Float64},
+    width::Int,
+    height::Int;
+    mu::Float64 = 1.0,
+    initial_location::Symbol = :center,
+    kwargs...
+)::Dict{Symbol, Any}
+    
+    # Create factory generator for ZIM processes
+    # Note: create_zim_simulation takes μ as positional parameter, not keyword
+    factory_generator = λ -> (() -> create_zim_simulation(width, height, λ, mu))
+    
+    # Determine initial infected nodes
+    if initial_location == :center
+        # Create dummy process to get center node
+        dummy_process = create_zim_simulation(width, height, lambda_values[1], mu)
+        initial_infected = [get_center_node(get_graph(dummy_process))]
+    elseif initial_location == :corner
+        initial_infected = [1]  # Corner node
+    elseif initial_location == :edge
+        initial_infected = [width ÷ 2]  # Edge node
+    else
+        throw(ArgumentError("Unsupported initial_location: $initial_location. Use :center, :corner, or :edge"))
+    end
+    
+    return run_parameter_sweep(
+        lambda_values, factory_generator, initial_infected, EscapeCriterion(); 
+        kwargs...
+    )
+end
+
+# =============================================================================
+# Exports
+# =============================================================================
+
+export AnalysisMode, MINIMAL, DETAILED
+export SurvivalCriterion, EscapeCriterion, PersistenceCriterion, ThresholdCriterion
+export estimate_survival_probability, run_parameter_sweep, run_zim_survival_analysis

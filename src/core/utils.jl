@@ -73,31 +73,6 @@ function set_global_seed!(seed::Int)
 end
 
 # =============================================================================
-# Statistical Analysis Helpers
-# =============================================================================
-
-"""
-Compute survival probability with standard error.
-
-# Arguments
-- `outcomes::Vector{Bool}`: Boolean array of survival outcomes
-
-# Returns
-- `Tuple{Float64, Float64}`: (probability, standard_error)
-"""
-function compute_survival_probability(outcomes::Vector{Bool})::Tuple{Float64, Float64}
-    n = length(outcomes)
-    if n == 0
-        return (0.0, 0.0)
-    end
-    
-    p = mean(outcomes)
-    se = sqrt(p * (1 - p) / n)
-    
-    return (p, se)
-end
-
-# =============================================================================
 # Performance Monitoring
 # =============================================================================
 
