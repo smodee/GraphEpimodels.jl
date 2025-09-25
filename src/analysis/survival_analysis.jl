@@ -112,16 +112,21 @@ function estimate_survival_probability(
         throw(ArgumentError("PersistenceCriterion requires finite max_time"))
     end
 
-    if use_threading && Threads.nthreads() > 1
-        return _estimate_survival_threaded(
-            process_factory, initial_infected, criterion,
-            num_simulations, max_time, max_steps, mode
-        )
-    else
-        return _estimate_survival_serial(
-            process_factory, initial_infected, criterion,
-            num_simulations, max_time, max_steps, mode
-        )
+    try
+        if use_threading && Threads.nthreads() > 1
+            return _estimate_survival_threaded(
+                process_factory, initial_infected, criterion,
+                num_simulations, max_time, max_steps, mode
+            )
+        else
+            return _estimate_survival_serial(
+                process_factory, initial_infected, criterion,
+                num_simulations, max_time, max_steps, mode
+            )
+        end
+    finally
+        # Always cleanup thread-local processes after analysis
+        clear_thread_local_processes!()
     end
 end
 
@@ -211,7 +216,8 @@ end
 
 """
 Thread-local storage for epidemic processes.
-Each thread gets its own process that's reused across simulations.
+Each thread gets its own process that's reused across simulations within a single analysis.
+Key: (thread_id, factory_hash)
 """
 const THREAD_LOCAL_PROCESSES = Dict{Tuple{Int, UInt64}, AbstractEpidemicProcess}()
 const THREAD_PROCESS_LOCK = Threads.SpinLock()
@@ -219,12 +225,12 @@ const THREAD_PROCESS_LOCK = Threads.SpinLock()
 """
 Get or create a thread-local process for maximum efficiency.
 
-Each thread creates one process and reuses it across all its simulations.
-Uses (thread_id, factory_hash) as key to handle different factory functions.
+Each thread creates one process and reuses it across all simulations within
+a single estimate_survival_probability call. Simple hashing ensures correctness.
 """
 function get_thread_local_process(process_factory::Function)::AbstractEpidemicProcess
     thread_id = Threads.threadid()
-    factory_hash = hash(process_factory)  # Different factories get different processes
+    factory_hash = hash(process_factory)  # Simple, reliable hashing
     key = (thread_id, factory_hash)
     
     # Try to get existing process (lockless read for performance)
@@ -241,22 +247,27 @@ function get_thread_local_process(process_factory::Function)::AbstractEpidemicPr
             return existing_process
         end
         
-        # Create new process for this thread
-        new_process = process_factory()
-        THREAD_LOCAL_PROCESSES[key] = new_process
-        return new_process
+        # Create new process for this thread with error handling
+        try
+            new_process = process_factory()
+            THREAD_LOCAL_PROCESSES[key] = new_process
+            return new_process
+        catch e
+            @error "Failed to create process in thread $thread_id" exception=e
+            rethrow()
+        end
     end
 end
 
 """
-Clear all thread-local processes (useful for cleanup or memory management).
+Clear all thread-local processes.
+Called automatically at the end of each estimate_survival_probability call.
 """
 function clear_thread_local_processes!()
     Threads.lock(THREAD_PROCESS_LOCK) do
         empty!(THREAD_LOCAL_PROCESSES)
         GC.gc()  # Force garbage collection to free memory
     end
-    @info "Cleared all thread-local processes"
 end
 
 """Serial implementation - no parallelization"""
@@ -487,4 +498,4 @@ end
 export AnalysisMode, MINIMAL, DETAILED
 export SurvivalCriterion, EscapeCriterion, PersistenceCriterion, ThresholdCriterion
 export estimate_survival_probability, run_parameter_sweep, run_zim_survival_analysis
-export check_threading_setup, get_recommended_threads, clear_thread_local_processes!
+export check_threading_setup, get_recommended_threads
