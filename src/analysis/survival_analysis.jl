@@ -42,7 +42,7 @@ end
     ::EscapeCriterion, 
     results::Dict{Symbol, Any}
 )::Bool
-    return has_reached_boundary(process)
+    return has_escaped(process)
 end
 
 @inline function evaluate_survival(
@@ -104,7 +104,7 @@ function estimate_survival_probability(
     max_time::Float64 = Inf,
     max_steps::Int = typemax(Int),
     mode::AnalysisMode = MINIMAL,
-    use_parallel::Bool = nprocs() > 3  # Reserve 2 cores by default
+    use_parallel::Bool = nworkers() > 0  # Simplified: use parallel if any workers available
 )::Dict{Symbol, Any}
 
     # Validation for PersistenceCriterion
@@ -112,7 +112,7 @@ function estimate_survival_probability(
         throw(ArgumentError("PersistenceCriterion requires finite max_time"))
     end
 
-    if use_parallel && nprocs() > 1
+    if use_parallel && nworkers() > 0
         return _estimate_survival_parallel(
             process_factory, initial_infected, criterion,
             num_simulations, max_time, max_steps, mode
@@ -195,7 +195,13 @@ function _estimate_survival_serial(
     return result
 end
 
-"""Parallel implementation using pmap with process reuse per worker"""
+"""
+Parallel implementation using @distributed for clean automatic parallelization.
+
+Uses different reduction strategies based on analysis mode:
+- MINIMAL: Count survivals with (+) reduction 
+- DETAILED: Collect all results with (vcat) reduction
+"""
 function _estimate_survival_parallel(
     process_factory::Function,
     initial_infected::Vector{Int},
@@ -206,79 +212,69 @@ function _estimate_survival_parallel(
     mode::AnalysisMode
 )::Dict{Symbol, Any}
 
-    # Initialize one process per worker
-    @everywhere begin
-        # Clear any existing worker process
-        if @isdefined(WORKER_PROCESS)
-            WORKER_PROCESS = nothing
-            GC.gc()  # Force cleanup
-        end
-        
-        # Each worker creates its own process
-        WORKER_PROCESS = $(process_factory)()
-    end
-    
-    try
-        # Use pmap for automatic dynamic load balancing
-        # Each simulation reuses the worker's process
-        simulation_results = @showprogress "Survival analysis (parallel)..." pmap(1:num_simulations) do sim_idx
-            # Reuse the worker's existing process
-            process = WORKER_PROCESS
+    if mode == MINIMAL
+        # Minimal mode: just count survivals using (+) reduction
+        survival_count = @showprogress "@distributed survival analysis..." @distributed (+) for i in 1:num_simulations
+            # Create fresh process
+            process = process_factory()
             
-            # Reset to initial state (much faster than creating new process)
+            # Reset and run simulation
             reset!(process, initial_infected)
-            
-            # Run simulation
             sim_results = run_simulation(process; max_time=max_time, max_steps=max_steps)
             
-            # Evaluate survival (inlined)
-            survived = evaluate_survival(process, criterion, sim_results)
+            # Return 1 if survived, 0 if extinct (gets summed up)
+            evaluate_survival(process, criterion, sim_results) ? 1 : 0
+        end
+        
+        # Compute statistics
+        survival_prob = survival_count / num_simulations
+        survival_se = sqrt(survival_prob * (1 - survival_prob) / num_simulations)
+        
+        return Dict{Symbol, Any}(
+            :survival_probability => survival_prob,
+            :survival_std_error => survival_se,
+            :num_survivals => survival_count,
+            :num_extinctions => num_simulations - survival_count
+        )
+        
+    else  # DETAILED mode
+        # Detailed mode: collect all results using (vcat) reduction
+        all_results = @showprogress "@distributed detailed analysis..." @distributed (vcat) for i in 1:num_simulations
+            # Create fresh process
+            process = process_factory()
             
-            # Collect data based on mode
-            if mode == DETAILED
-                survival_time = survived ? sim_results[:time] : NaN
-                final_size = get_cluster_size(process)
-                return (survived=survived, time=survival_time, size=final_size)
-            else
-                return (survived=survived,)
-            end
+            # Reset and run simulation
+            reset!(process, initial_infected)
+            sim_results = run_simulation(process; max_time=max_time, max_steps=max_steps)
+            
+            # Evaluate survival and collect detailed data
+            survived = evaluate_survival(process, criterion, sim_results)
+            survival_time = survived ? sim_results[:time] : NaN
+            final_size = get_cluster_size(process)
+            
+            # Return vector with one detailed result (gets concatenated)
+            [(survived=survived, time=survival_time, size=final_size)]
         end
         
-    finally
-        # Clean up worker processes
-        @everywhere begin
-            if @isdefined(WORKER_PROCESS)
-                WORKER_PROCESS = nothing
-                GC.gc()
-            end
-        end
-    end
-    
-    # Aggregate results from all simulations
-    survival_count = count(r -> r.survived, simulation_results)
-    
-    survival_prob = survival_count / num_simulations
-    survival_se = sqrt(survival_prob * (1 - survival_prob) / num_simulations)
-    
-    result = Dict{Symbol, Any}(
-        :survival_probability => survival_prob,
-        :survival_std_error => survival_se,
-        :num_survivals => survival_count,
-        :num_extinctions => num_simulations - survival_count
-    )
-    
-    # Aggregate detailed data if collected
-    if mode == DETAILED
-        survival_times = [r.time for r in simulation_results if r.survived && !isnan(r.time)]
-        final_sizes = [r.size for r in simulation_results]
+        # Process collected results
+        survival_count = count(r -> r.survived, all_results)
+        survival_times = [r.time for r in all_results if r.survived && !isnan(r.time)]
+        final_sizes = [r.size for r in all_results]
         
-        result[:mean_survival_time] = length(survival_times) > 0 ? mean(survival_times) : NaN
-        result[:survival_times] = survival_times
-        result[:mean_final_size] = mean(final_sizes)
-        result[:final_sizes] = final_sizes
+        survival_prob = survival_count / num_simulations
+        survival_se = sqrt(survival_prob * (1 - survival_prob) / num_simulations)
+        
+        return Dict{Symbol, Any}(
+            :survival_probability => survival_prob,
+            :survival_std_error => survival_se,
+            :num_survivals => survival_count,
+            :num_extinctions => num_simulations - survival_count,
+            :mean_survival_time => length(survival_times) > 0 ? mean(survival_times) : NaN,
+            :survival_times => survival_times,
+            :mean_final_size => mean(final_sizes),
+            :final_sizes => final_sizes
+        )
     end
-    
-    return result
 end
 
 # =============================================================================
