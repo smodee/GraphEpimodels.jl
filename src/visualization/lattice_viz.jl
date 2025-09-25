@@ -56,7 +56,9 @@ function supported_graph_types(viz::LatticeVisualizer)::Vector{Type}
     return [SquareLattice]
 end
 
-function visualize_state(viz::LatticeVisualizer, process::AbstractEpidemicProcess)
+function visualize_state(viz::LatticeVisualizer, process::AbstractEpidemicProcess;
+                        transparent_background::Bool = false,
+                        trim_plot::Bool = false)
     # Validate compatibility
     validate_visualizer_compatibility(viz, process)
     
@@ -69,23 +71,44 @@ function visualize_state(viz::LatticeVisualizer, process::AbstractEpidemicProces
     # Convert linear state array to 2D matrix for heatmap
     state_matrix = _states_to_matrix(states_raw, height, width)
     
-    # Create color matrix based on states
-    color_matrix = _create_color_matrix(state_matrix, viz.color_scheme)
+    # Convert to Float64 for heatmap
+    numeric_matrix = Float64.(state_matrix)
+
+    # Get colors from scheme
+    colors = COLOR_SCHEMES[viz.color_scheme]
+    color_list = [colors[:susceptible], colors[:infected], colors[:removed]]
     
     # Create the heatmap plot
     plot_title = generate_visualization_title(process)
     
-    p = heatmap(color_matrix,
+    p = heatmap(numeric_matrix,
                title = plot_title,
                size = viz.figure_size,
                aspect_ratio = :equal,
                showaxis = false,
                grid = viz.show_grid,
-               colorbar = false)  # We use discrete colors, not continuous
+               colorbar = false,
+               c = color_list,
+               clims = (0, 2))
     
     # Add boundary highlighting if requested
     if viz.show_boundary && has_boundary(graph)
         _add_boundary_overlay!(p, graph, viz)
+    end
+
+    # Set transparent background for the entire plot if needed
+    if transparent_background
+        plot!(p, background_color = RGBA(0,0,0,0))
+    end
+
+    # Remove title and minimize margins if trimming
+    if trim_plot
+        plot!(p, 
+              title = "",  # Remove title
+              margin = 0Plots.mm,  # Remove all margins
+              framestyle = :none,  # Remove frame/axes completely
+              showaxis = false,   # Ensure axes are hidden
+              grid = false)       # Ensure grid is off
     end
     
     return p
@@ -143,36 +166,6 @@ function _states_to_matrix(states_raw::Vector{Int8}, height::Int, width::Int)::M
 end
 
 """
-Create a color matrix from state matrix using the specified color scheme.
-
-Returns a matrix of colors that Plots.jl can use directly for heatmap rendering.
-"""
-function _create_color_matrix(state_matrix::Matrix{Int8}, scheme::Symbol)
-    rows, cols = size(state_matrix)
-    color_matrix = Matrix{Symbol}(undef, rows, cols)
-    
-    # Get color scheme
-    colors = COLOR_SCHEMES[scheme]
-    
-    # Map each state to its color
-    for i in 1:rows, j in 1:cols
-        state_int = state_matrix[i, j]
-        
-        color_matrix[i, j] = if state_int == state_to_int(SUSCEPTIBLE)
-            colors[:susceptible]
-        elseif state_int == state_to_int(INFECTED)
-            colors[:infected]
-        elseif state_int == state_to_int(REMOVED)
-            colors[:removed]
-        else
-            colors[:background]  # Fallback
-        end
-    end
-    
-    return color_matrix
-end
-
-"""
 Add boundary highlighting overlay to the plot.
 
 Draws a border around the lattice to emphasize boundary conditions.
@@ -197,31 +190,6 @@ end
 # =============================================================================
 # Convenience Functions
 # =============================================================================
-
-"""
-Quick heatmap visualization with default settings.
-
-Convenience function for rapid visualization without creating a visualizer object.
-
-# Arguments
-- `process::AbstractEpidemicProcess`: Process with SquareLattice graph
-- `color_scheme::Symbol`: Color scheme to use (default: :zim)
-
-# Returns
-- Plots.jl plot object
-
-# Example
-```julia
-julia> zim = create_zim_simulation(50, 50, 2.0)
-julia> run_simulation(zim; max_time=20.0)
-julia> p = quick_lattice_plot(zim)
-julia> display(p)
-```
-"""
-function quick_lattice_plot(process::AbstractEpidemicProcess, color_scheme::Symbol = :zim)
-    viz = LatticeVisualizer(color_scheme=color_scheme)
-    return visualize_state(viz, process)
-end
 
 """
 Create a comparison plot showing multiple lattice states side by side.
@@ -279,24 +247,46 @@ function plot_lattice_comparison(processes::Vector{<:AbstractEpidemicProcess},
 end
 
 """
-Save lattice visualization to file.
+Save lattice visualization to file with advanced formatting options.
 
 # Arguments
 - `process::AbstractEpidemicProcess`: Process to visualize
 - `filename::String`: Output filename (extension determines format)
 - `color_scheme::Symbol`: Color scheme to use (default: :zim)
+- `figure_size::Tuple{Int, Int}`: Plot dimensions in pixels (default: (800, 800))
 - `dpi::Int`: Resolution for raster formats (default: 300)
+- `transparent_background::Bool`: Make background transparent (default: false)
+- `trim_plot::Bool`: Remove title and margins for clean output (default: false)
 
-# Example
+# Examples
 ```julia
-julia> save_lattice_plot(zim, "simulation_result.png")
+# Basic usage
+julia> save_lattice_plot(zim, "simulation_result.pdf")
+
+# High-resolution with custom size
+julia> save_lattice_plot(zim, "large_sim.png", figure_size=(1200, 1200), dpi=600)
+
+# Trimmed plot for LaTeX figures
+julia> save_lattice_plot(zim, "paper_figure.pdf", trim_plot=true)
+
+# Transparent overlay
+julia> save_lattice_plot(zim, "overlay.png", transparent_background=true, trim_plot=true)
 ```
 """
 function save_lattice_plot(process::AbstractEpidemicProcess, filename::String;
-                          color_scheme::Symbol = :zim, dpi::Int = 300)
-    viz = LatticeVisualizer(color_scheme=color_scheme, figure_size=(800, 800))
-    p = visualize_state(viz, process)
+                          color_scheme::Symbol = :zim, 
+                          figure_size::Tuple{Int, Int} = (800, 800),
+                          dpi::Int = 300,
+                          transparent_background::Bool = false,
+                          trim_plot::Bool = false,
+                          show_boundary::Bool = false)
+    
+    viz = LatticeVisualizer(color_scheme=color_scheme, 
+                           figure_size=figure_size,
+                           show_boundary=show_boundary)
+    p = visualize_state(viz, process, transparent_background=transparent_background, trim_plot=trim_plot)
     
     savefig(p, filename)
+    
     println("Lattice visualization saved to: $filename")
 end
