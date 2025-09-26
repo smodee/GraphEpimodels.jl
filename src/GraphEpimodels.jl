@@ -12,6 +12,10 @@ and other interacting particle systems.
 - ZIM (Zombie Infection Model) implementation
 - Statistical analysis tools
 
+# Threading Setup
+For parallel survival probability analysis, start Julia with multiple threads:
+  julia --threads=4
+
 # Example Usage
 ```julia
 using GraphEpimodels
@@ -24,10 +28,9 @@ results = run_simulation(zim; max_time=50.0)
 println("Final size: ", results[:total_ever_infected])
 println("Escaped: ", has_escaped(zim))
 
-# Estimate survival probability
-initial = [get_center_node(zim.lattice)]
-stats = estimate_survival_probability(zim, initial; num_simulations=1000)
-println("Survival probability: ", stats[:survival_probability])
+# Parallel survival analysis
+λ_values = [1.5, 2.0, 2.5]
+sweep_results = run_zim_survival_analysis(λ_values, 100, 100; num_simulations=1000)
 ```
 
 Based on research by Bethuelsen, Broman & Modée (2024).
@@ -38,7 +41,7 @@ using Random
 using Statistics
 using Plots
 using Colors
-using Distributed, ProgressMeter
+using ProgressMeter
 
 # Re-export commonly used modules
 export Random
@@ -117,6 +120,7 @@ include("analysis/survival_analysis.jl")
 export AnalysisMode, MINIMAL, DETAILED
 export SurvivalCriterion, EscapeCriterion, PersistenceCriterion, ThresholdCriterion
 export estimate_survival_probability, run_parameter_sweep, run_zim_survival_analysis
+export check_threading_setup, get_recommended_threads
 
 # =============================================================================
 # Visualization
@@ -174,6 +178,7 @@ export print_info
 function __init__()
     # Set up default random seed for reproducible examples
     # (Users can override this)
+    println("Threading: $(Threads.nthreads()) threads available")
     Random.seed!(12345)
 end
 

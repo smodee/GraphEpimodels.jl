@@ -145,7 +145,7 @@ function _estimate_survival_threaded(
         # Minimal mode: just count survivals
         survival_count = Threads.Atomic{Int}(0)
         
-        @showprogress "Survival analysis (threaded)..." Threads.@threads for i in 1:num_simulations
+        @showprogress Threads.@threads for i in 1:num_simulations
             # Thread-local process - create once per thread, reuse across simulations
             thread_process = get_thread_local_process(process_factory)
             
@@ -173,7 +173,7 @@ function _estimate_survival_threaded(
         # Pre-allocate results arrays
         results = Vector{NamedTuple{(:survived, :time, :size), Tuple{Bool, Float64, Int}}}(undef, num_simulations)
         
-        @showprogress "Detailed survival analysis (threaded)..." Threads.@threads for i in 1:num_simulations
+        @showprogress Threads.@threads for i in 1:num_simulations
             # Thread-local process - create once per thread, reuse across simulations
             thread_process = get_thread_local_process(process_factory)
             
@@ -295,7 +295,7 @@ function _estimate_survival_serial(
         sizehint!(final_sizes, num_simulations)
     end
     
-    @showprogress "Survival analysis (serial)..." for i in 1:num_simulations
+    @showprogress for i in 1:num_simulations
         # Reset to initial state
         reset!(process, initial_infected)
         
@@ -387,7 +387,7 @@ function run_parameter_sweep(
     survival_probs = Vector{Float64}(undef, n_params)
     std_errors = Vector{Float64}(undef, n_params)
     
-    @showprogress "Parameter sweep..." for (i, param) in enumerate(parameter_values)
+    @showprogress for (i, param) in enumerate(parameter_values)
         factory = factory_generator(param)
         results = estimate_survival_probability(
             factory, initial_infected, criterion; kwargs...
