@@ -420,7 +420,7 @@ Convenience function for ZIM parameter sweeps with standard setup.
 sweep = run_zim_survival_analysis([1.5, 2.0, 2.5], 100, 100; mode=DETAILED)
 ```
 """
-function run_zim_survival_analysis(
+function run_zim_lattice_survival_analysis(
     lambda_values::Vector{Float64},
     width::Int,
     height::Int;
@@ -497,5 +497,5 @@ end
 
 export AnalysisMode, MINIMAL, DETAILED
 export SurvivalCriterion, EscapeCriterion, PersistenceCriterion, ThresholdCriterion
-export estimate_survival_probability, run_parameter_sweep, run_zim_survival_analysis
+export estimate_survival_probability, run_parameter_sweep, run_zim_lattice_survival_analysis
 export check_threading_setup, get_recommended_threads
