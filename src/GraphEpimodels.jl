@@ -30,7 +30,7 @@ println("Escaped: ", has_escaped(zim))
 
 # Parallel survival analysis
 λ_values = [1.5, 2.0, 2.5]
-sweep_results = run_zim_survival_analysis(λ_values, 100, 100; num_simulations=1000)
+sweep_results = run_zim_lattice_survival_analysis(λ_values, 100, 100; num_simulations=1000)
 ```
 
 Based on research by Bethuelsen, Broman & Modée (2024).
@@ -119,7 +119,7 @@ export @time_it
 include("analysis/survival_analysis.jl")
 export AnalysisMode, MINIMAL, DETAILED
 export SurvivalCriterion, EscapeCriterion, PersistenceCriterion, ThresholdCriterion
-export estimate_survival_probability, run_parameter_sweep, run_zim_survival_analysis
+export estimate_survival_probability, run_parameter_sweep, run_zim_lattice_survival_analysis
 export check_threading_setup, get_recommended_threads
 
 # =============================================================================
