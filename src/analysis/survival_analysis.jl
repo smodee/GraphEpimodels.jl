@@ -200,20 +200,17 @@ function _estimate_survival_threaded(
         # Process collected results
         survival_count = count(r -> r.survived, results)
         survival_times = [r.time for r in results if r.survived && !isnan(r.time)]
-        final_sizes = [r.size for r in results]
-        
         survival_prob = survival_count / num_simulations
-        survival_se = sqrt(survival_prob * (1 - survival_prob) / num_simulations)
         
         return Dict{Symbol, Any}(
             :survival_probability => survival_prob,
-            :survival_std_error => survival_se,
+            :survival_std_error => sqrt(survival_prob * (1 - survival_prob) / num_simulations),
             :num_survivals => survival_count,
             :num_extinctions => num_simulations - survival_count,
             :mean_survival_time => length(survival_times) > 0 ? mean(survival_times) : NaN,
             :survival_times => survival_times,
             :mean_final_size => mean(final_sizes),
-            :final_sizes => final_sizes
+            :final_sizes => [r.size for r in results]
         )
     end
 end
@@ -396,7 +393,6 @@ function run_parameter_sweep(
     factory_generator::Function,
     initial_infected::Vector{Int},
     criterion::SurvivalCriterion = EscapeCriterion();
-    num_simulations::Int = 100,
     save_to::Union{String, Nothing} = nothing,
     start_seed::Int = 1,
     kwargs...
@@ -419,7 +415,7 @@ function run_parameter_sweep(
         # Store results
         survival_probs[i] = results[:survival_probability]
         std_errors[i] = results[:survival_std_error]
-        num_sims_vec[i] = num_simulations
+        num_sims_vec[i] = results[:num_survivals] + results[:num_extinctions]
         num_survivals_vec[i] = results[:num_survivals]
         
         # Save to CSV if requested
@@ -432,12 +428,12 @@ function run_parameter_sweep(
             appended = append_survival_result(
                 save_to,
                 param,
-                num_simulations,
+                num_sims_vec[i],
                 results[:num_survivals],
                 results[:survival_probability],
                 results[:survival_std_error],
                 start_seed,
-                start_seed + num_simulations - 1,
+                start_seed + num_sims_vec[i] - 1,
                 process_info
             )
             
