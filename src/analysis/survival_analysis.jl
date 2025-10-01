@@ -156,7 +156,10 @@ function _estimate_survival_threaded(
             
             # Reset with specific seed
             reset!(thread_process, initial_infected; rng_seed=simulation_seed)
-            sim_results = run_simulation(thread_process; max_time=max_time, max_steps=max_steps)
+
+            # Enable stop_on_escape optimization for EscapeCriterion
+            stop_on_escape = criterion isa EscapeCriterion
+            sim_results = run_simulation(thread_process; max_time=max_time, max_steps=max_steps, stop_on_escape=stop_on_escape)
             
             # Thread-safe increment if survived
             if evaluate_survival(thread_process, criterion, sim_results)
@@ -313,8 +316,9 @@ function _estimate_survival_serial(
         # Reset with specific seed
         reset!(process, initial_infected; rng_seed=simulation_seed)
         
-        # Run simulation
-        sim_results = run_simulation(process; max_time=max_time, max_steps=max_steps)
+        # Enable stop_on_escape optimization for EscapeCriterion and run simulation
+        stop_on_escape = criterion isa EscapeCriterion
+        sim_results = run_simulation(process; max_time=max_time, max_steps=max_steps, stop_on_escape=stop_on_escape)
         
         # Evaluate survival
         survived = evaluate_survival(process, criterion, sim_results)
@@ -361,36 +365,47 @@ end
 """
 High-performance parameter sweep using threading with optional CSV persistence.
 
+Uses common random numbers across parameters for variance reduction: each parameter 
+value uses the same sequence of random seeds, ensuring fair comparison by giving all 
+parameters the same random conditions. Observed differences are due to parameter changes 
+rather than lucky/unlucky seeds.
+
+When CSV persistence is enabled, the function automatically continues from previous runs:
+- Checks CSV for existing results before computing
+- Extends seed ranges from where previous runs ended
+- Updates existing rows with cumulative statistics
+
 # Arguments  
 - `parameter_values::Vector{Float64}`: Parameter values to test
 - `factory_generator::Function`: Function that takes parameter and returns factory function
 - `initial_infected::Vector{Int}`: Initial infected nodes
 - `criterion::SurvivalCriterion`: Survival criterion
 - `save_to::Union{String, Nothing}`: Optional CSV filename for incremental saving
-- `start_seed::Int`: Starting random seed for reproducibility
-- `kwargs...`: Additional arguments passed to estimate_survival_probability
+- `kwargs...`: Additional arguments passed to estimate_survival_probability (must include num_simulations)
 
 # Returns
 - Parameter sweep results with survival curves
 
 # Examples
 ```julia
-# Basic parameter sweep
+# Basic parameter sweep (all parameters use seeds 1-100)
 sweep = run_parameter_sweep(
     [1.5, 2.0, 2.5],
     λ -> (() -> create_zim_simulation(100, 100, λ)),
-    [center_node]
+    [center_node];
+    num_simulations = 100
 )
 
-# With CSV persistence (saves after each parameter)
+# With CSV persistence - automatically continues from previous runs
 sweep = run_parameter_sweep(
     [1.0:0.1:3.0...],
     λ -> (() -> create_zim_simulation(200, 200, λ)),
     [center_node];
     save_to = "zim_study.csv",
-    start_seed = 10000,
     num_simulations = 1000
 )
+# First run: uses seeds 1-1000 for each parameter
+# Second run: continues with seeds 1001-2000 for each parameter
 ```
 """
 function run_parameter_sweep(
@@ -399,7 +414,6 @@ function run_parameter_sweep(
     initial_infected::Vector{Int},
     criterion::SurvivalCriterion = EscapeCriterion();
     save_to::Union{String, Nothing} = nothing,
-    start_seed::Int = 1,
     kwargs...
 )::Dict{Symbol, Any}
     
@@ -412,9 +426,25 @@ function run_parameter_sweep(
     @showprogress for (i, param) in enumerate(parameter_values)
         factory = factory_generator(param)
         
+        # Determine starting seed for this parameter
+        start_seed = if save_to !== nothing
+            # Create sample process to extract configuration
+            sample_process = factory()
+            process_info = extract_process_info(sample_process)
+            sample_process = nothing  # Allow garbage collection
+            
+            # Check CSV for existing results and determine continuation seed
+            get_next_start_seed(save_to, param, process_info)
+        else
+            # No CSV persistence - always start from seed 1
+            1
+        end
+        
         # Run survival analysis
         results = estimate_survival_probability(
-            factory, initial_infected, criterion; start_seed=start_seed, kwargs...
+            factory, initial_infected, criterion; 
+            start_seed=start_seed, 
+            kwargs...
         )
         
         # Store results
@@ -424,14 +454,12 @@ function run_parameter_sweep(
         num_survivals_vec[i] = results[:num_survivals]
         
         # Save to CSV if requested
-        if save_to !== nothing
-            # Extract process info for CSV metadata
-            sample_process = factory()
-            process_info = extract_process_info(sample_process)
-            sample_process = nothing  # Allow garbage collection
+        if save_to !== nothing            
+            # Calculate end seed
+            end_seed = start_seed + num_sims_vec[i] - 1
             
-            # Append to CSV (handles duplicate checking)
-            appended = append_survival_result(
+            # Update or append to CSV
+            was_updated = update_or_append_survival_result(
                 save_to,
                 param,
                 num_sims_vec[i],
@@ -439,14 +467,14 @@ function run_parameter_sweep(
                 results[:survival_probability],
                 results[:survival_std_error],
                 start_seed,
-                start_seed + num_sims_vec[i] - 1,
+                end_seed,
                 process_info
             )
             
-            if !appended
-                @info "Parameter $param: Skipped (duplicate entry in CSV)"
+            if was_updated
+                @info "Parameter $param: Updated existing entry (seeds $start_seed-$end_seed)"
             else
-                @info "Parameter $param: Saved to $save_to"
+                @info "Parameter $param: Created new entry (seeds $start_seed-$end_seed)"
             end
         end
     end
