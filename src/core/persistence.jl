@@ -102,9 +102,9 @@ function process_info_to_config_string(info::Dict{String, Any})::String
     parts = String[]
     for key in relevant_keys
         value = info[key]
-        # Format the value appropriately
-        value_str = if value isa Float64
-            string(round(value, digits=10))  # Avoid floating point comparison issues
+        # Format the value appropriately - normalize all numbers to Float64
+        value_str = if value isa Number
+            string(round(Float64(value), digits=10))
         else
             string(value)
         end
