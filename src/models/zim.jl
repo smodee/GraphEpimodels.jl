@@ -125,13 +125,20 @@ function step!(process::ZIMProcess)::Float64
     return dt
 end
 
-function reset!(process::ZIMProcess, initial_infected::Vector{Int})
+function reset!(process::ZIMProcess, 
+                initial_infected::Vector{Int};
+                rng_seed::Union{Int, Nothing} = nothing)
     # Validate input
     validate_initial_infected(initial_infected, process.graph)
     
     # Reset time and counters
     process.time = 0.0
     process.steps = 0
+
+    # Seed the RNG if provided
+    if rng_seed !== nothing
+        Random.seed!(process.rng, rng_seed)
+    end
     
     # Clear active tracking
     clear_active_nodes!(process.active_tracker)

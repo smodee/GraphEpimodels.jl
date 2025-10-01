@@ -107,9 +107,16 @@ export create_zim_simulation
 # Utilities
 # =============================================================================
 
+# Basic utility functions
 include("core/utils.jl")
 export validate_node_list, create_rng, set_global_seed!
 export @time_it
+
+# Process serialization and CSV utilities
+include("core/persistence.jl")
+export extract_process_info, process_info_to_config_string
+export process_info_to_json, parse_process_info_json
+export append_survival_result
 
 # =============================================================================
 # Analysis Tools  

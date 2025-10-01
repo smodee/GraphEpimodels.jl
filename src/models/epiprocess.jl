@@ -87,7 +87,9 @@ Reset process to initial conditions.
 - `process::AbstractEpidemicProcess`: The process to reset
 - `initial_infected::Vector{Int}`: Nodes to start as infected
 """
-function reset!(process::AbstractEpidemicProcess, initial_infected::Vector{Int})
+function reset!(process::AbstractEpidemicProcess,
+                initial_infected::Vector{Int};
+                rng_seed::Union{Int, Nothing} = nothing)
     error("reset! must be implemented by concrete process type $(typeof(process))")
 end
 

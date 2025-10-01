@@ -104,7 +104,8 @@ function estimate_survival_probability(
     max_time::Float64 = Inf,
     max_steps::Int = typemax(Int),
     mode::AnalysisMode = MINIMAL,
-    use_threading::Bool = Threads.nthreads() > 1
+    use_threading::Bool = Threads.nthreads() > 1,
+    start_seed::Int = 1
 )::Dict{Symbol, Any}
 
     # Validation for PersistenceCriterion
@@ -116,12 +117,12 @@ function estimate_survival_probability(
         if use_threading && Threads.nthreads() > 1
             return _estimate_survival_threaded(
                 process_factory, initial_infected, criterion,
-                num_simulations, max_time, max_steps, mode
+                num_simulations, max_time, max_steps, mode, start_seed
             )
         else
             return _estimate_survival_serial(
                 process_factory, initial_infected, criterion,
-                num_simulations, max_time, max_steps, mode
+                num_simulations, max_time, max_steps, mode, start_seed
             )
         end
     finally
@@ -130,7 +131,7 @@ function estimate_survival_probability(
     end
 end
 
-"""Threading implementation with thread-local process reuse for maximum efficiency"""
+"""Threading implementation with thread-local process reuse and seed control"""
 function _estimate_survival_threaded(
     process_factory::Function,
     initial_infected::Vector{Int},
@@ -138,7 +139,8 @@ function _estimate_survival_threaded(
     num_simulations::Int,
     max_time::Float64,
     max_steps::Int,
-    mode::AnalysisMode
+    mode::AnalysisMode,
+    start_seed::Int
 )::Dict{Symbol, Any}
 
     if mode == MINIMAL
@@ -146,11 +148,14 @@ function _estimate_survival_threaded(
         survival_count = Threads.Atomic{Int}(0)
         
         @showprogress Threads.@threads for i in 1:num_simulations
+            # Calculate seed for this specific simulation
+            simulation_seed = start_seed + (i - 1)
+            
             # Thread-local process - create once per thread, reuse across simulations
             thread_process = get_thread_local_process(process_factory)
             
-            # Reset and run simulation (much faster than creating new process)
-            reset!(thread_process, initial_infected)
+            # Reset with specific seed
+            reset!(thread_process, initial_infected; rng_seed=simulation_seed)
             sim_results = run_simulation(thread_process; max_time=max_time, max_steps=max_steps)
             
             # Thread-safe increment if survived
@@ -174,11 +179,14 @@ function _estimate_survival_threaded(
         results = Vector{NamedTuple{(:survived, :time, :size), Tuple{Bool, Float64, Int}}}(undef, num_simulations)
         
         @showprogress Threads.@threads for i in 1:num_simulations
+            # Calculate seed for this specific simulation
+            simulation_seed = start_seed + (i - 1)
+            
             # Thread-local process - create once per thread, reuse across simulations
             thread_process = get_thread_local_process(process_factory)
             
-            # Reset and run simulation
-            reset!(thread_process, initial_infected)
+            # Reset with specific seed
+            reset!(thread_process, initial_infected; rng_seed=simulation_seed)
             sim_results = run_simulation(thread_process; max_time=max_time, max_steps=max_steps)
             
             # Collect detailed data
@@ -270,7 +278,7 @@ function clear_thread_local_processes!()
     end
 end
 
-"""Serial implementation - no parallelization"""
+"""Serial implementation with seed control"""
 function _estimate_survival_serial(
     process_factory::Function,
     initial_infected::Vector{Int},
@@ -278,7 +286,8 @@ function _estimate_survival_serial(
     num_simulations::Int,
     max_time::Float64,
     max_steps::Int,
-    mode::AnalysisMode
+    mode::AnalysisMode,
+    start_seed::Int
 )::Dict{Symbol, Any}
 
     # Create process once for serial execution
@@ -296,8 +305,11 @@ function _estimate_survival_serial(
     end
     
     @showprogress for i in 1:num_simulations
-        # Reset to initial state
-        reset!(process, initial_infected)
+        # Calculate seed for this specific simulation
+        simulation_seed = start_seed + (i - 1)
+        
+        # Reset with specific seed
+        reset!(process, initial_infected; rng_seed=simulation_seed)
         
         # Run simulation
         sim_results = run_simulation(process; max_time=max_time, max_steps=max_steps)
@@ -345,13 +357,15 @@ end
 # =============================================================================
 
 """
-High-performance parameter sweep using threading.
+High-performance parameter sweep using threading with optional CSV persistence.
 
 # Arguments  
 - `parameter_values::Vector{Float64}`: Parameter values to test
 - `factory_generator::Function`: Function that takes parameter and returns factory function
 - `initial_infected::Vector{Int}`: Initial infected nodes
 - `criterion::SurvivalCriterion`: Survival criterion
+- `save_to::Union{String, Nothing}`: Optional CSV filename for incremental saving
+- `start_seed::Int`: Starting random seed for reproducibility
 - `kwargs...`: Additional arguments passed to estimate_survival_probability
 
 # Returns
@@ -359,19 +373,21 @@ High-performance parameter sweep using threading.
 
 # Examples
 ```julia
-# ZIM lambda sweep
+# Basic parameter sweep
 sweep = run_parameter_sweep(
     [1.5, 2.0, 2.5],
     λ -> (() -> create_zim_simulation(100, 100, λ)),
     [center_node]
 )
 
-# More complex factory with multiple parameters
+# With CSV persistence (saves after each parameter)
 sweep = run_parameter_sweep(
     [1.0:0.1:3.0...],
-    λ -> (() -> create_zim_simulation(200, 200, λ, 1.5; rng_seed=rand(UInt))),
+    λ -> (() -> create_zim_simulation(200, 200, λ)),
     [center_node];
-    mode=DETAILED
+    save_to = "zim_study.csv",
+    start_seed = 10000,
+    num_simulations = 1000
 )
 ```
 """
@@ -380,25 +396,63 @@ function run_parameter_sweep(
     factory_generator::Function,
     initial_infected::Vector{Int},
     criterion::SurvivalCriterion = EscapeCriterion();
+    num_simulations::Int = 100,
+    save_to::Union{String, Nothing} = nothing,
+    start_seed::Int = 1,
     kwargs...
 )::Dict{Symbol, Any}
     
     n_params = length(parameter_values)
     survival_probs = Vector{Float64}(undef, n_params)
     std_errors = Vector{Float64}(undef, n_params)
+    num_sims_vec = Vector{Int}(undef, n_params)
+    num_survivals_vec = Vector{Int}(undef, n_params)
     
     @showprogress for (i, param) in enumerate(parameter_values)
         factory = factory_generator(param)
+        
+        # Run survival analysis
         results = estimate_survival_probability(
-            factory, initial_infected, criterion; kwargs...
+            factory, initial_infected, criterion; start_seed=start_seed, kwargs...
         )
         
+        # Store results
         survival_probs[i] = results[:survival_probability]
         std_errors[i] = results[:survival_std_error]
+        num_sims_vec[i] = num_simulations
+        num_survivals_vec[i] = results[:num_survivals]
+        
+        # Save to CSV if requested
+        if save_to !== nothing
+            # Extract process info for CSV metadata
+            sample_process = factory()
+            process_info = extract_process_info(sample_process)
+            
+            # Append to CSV (handles duplicate checking)
+            appended = append_survival_result(
+                save_to,
+                param,
+                num_simulations,
+                results[:num_survivals],
+                results[:survival_probability],
+                results[:survival_std_error],
+                start_seed,
+                start_seed + num_simulations - 1,
+                process_info
+            )
+            
+            if !appended
+                @info "Parameter $param: Skipped (duplicate entry in CSV)"
+            else
+                @info "Parameter $param: Saved to $save_to"
+            end
+        end
     end
     
     return Dict{Symbol, Any}(
         :parameter_values => parameter_values,
+        :num_simulations => num_sims_vec,
+        :num_survivals => num_survivals_vec,
         :survival_probabilities => survival_probs,
         :std_errors => std_errors
     )
@@ -417,7 +471,7 @@ Convenience function for ZIM parameter sweeps with standard setup.
 
 # Example
 ```julia
-sweep = run_zim_survival_analysis([1.5, 2.0, 2.5], 100, 100; mode=DETAILED)
+sweep = run_zim_lattice_survival_analysis([1.5, 2.0, 2.5], 100, 100; mode=DETAILED)
 ```
 """
 function run_zim_lattice_survival_analysis(
