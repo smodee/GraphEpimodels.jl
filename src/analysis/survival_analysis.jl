@@ -287,8 +287,13 @@ function _estimate_survival_serial(
     start_seed::Int
 )::Dict{Symbol, Any}
 
-    # Create process once for serial execution
-    process = process_factory()
+    # Create process once for serial execution with error handling
+    try
+        process = process_factory()
+    catch e
+        @error "Failed to create process for serial execution" exception=e
+        rethrow()
+    end
 
     # Data collection based on mode
     survival_count = 0
@@ -423,6 +428,7 @@ function run_parameter_sweep(
             # Extract process info for CSV metadata
             sample_process = factory()
             process_info = extract_process_info(sample_process)
+            sample_process = nothing  # Allow garbage collection
             
             # Append to CSV (handles duplicate checking)
             appended = append_survival_result(

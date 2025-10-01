@@ -116,7 +116,7 @@ export @time_it
 include("core/persistence.jl")
 export extract_process_info, process_info_to_config_string
 export process_info_to_json, parse_process_info_json
-export append_survival_result
+export get_next_start_seed, update_or_append_survival_result
 
 # =============================================================================
 # Analysis Tools  
