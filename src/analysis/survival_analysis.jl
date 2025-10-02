@@ -212,69 +212,9 @@ function _estimate_survival_threaded(
             :num_extinctions => num_simulations - survival_count,
             :mean_survival_time => length(survival_times) > 0 ? mean(survival_times) : NaN,
             :survival_times => survival_times,
-            :mean_final_size => mean(final_sizes),
+            :mean_final_size => mean([r.size for r in results]),
             :final_sizes => [r.size for r in results]
         )
-    end
-end
-
-# =============================================================================
-# Thread-Local Process Management
-# =============================================================================
-
-"""
-Thread-local storage for epidemic processes.
-Each thread gets its own process that's reused across simulations within a single analysis.
-Key: (thread_id, factory_hash)
-"""
-const THREAD_LOCAL_PROCESSES = Dict{Tuple{Int, UInt64}, AbstractEpidemicProcess}()
-const THREAD_PROCESS_LOCK = Threads.SpinLock()
-
-"""
-Get or create a thread-local process for maximum efficiency.
-
-Each thread creates one process and reuses it across all simulations within
-a single estimate_survival_probability call. Simple hashing ensures correctness.
-"""
-function get_thread_local_process(process_factory::Function)::AbstractEpidemicProcess
-    thread_id = Threads.threadid()
-    factory_hash = hash(process_factory)  # Simple, reliable hashing
-    key = (thread_id, factory_hash)
-    
-    # Try to get existing process (lockless read for performance)
-    existing_process = get(THREAD_LOCAL_PROCESSES, key, nothing)
-    if existing_process !== nothing
-        return existing_process
-    end
-    
-    # Need to create new process - use lock for thread safety
-    Threads.lock(THREAD_PROCESS_LOCK) do
-        # Double-check pattern - another thread might have created it
-        existing_process = get(THREAD_LOCAL_PROCESSES, key, nothing)
-        if existing_process !== nothing
-            return existing_process
-        end
-        
-        # Create new process for this thread with error handling
-        try
-            new_process = process_factory()
-            THREAD_LOCAL_PROCESSES[key] = new_process
-            return new_process
-        catch e
-            @error "Failed to create process in thread $thread_id" exception=e
-            rethrow()
-        end
-    end
-end
-
-"""
-Clear all thread-local processes.
-Called automatically at the end of each estimate_survival_probability call.
-"""
-function clear_thread_local_processes!()
-    Threads.lock(THREAD_PROCESS_LOCK) do
-        empty!(THREAD_LOCAL_PROCESSES)
-        GC.gc()  # Force garbage collection to free memory
     end
 end
 
@@ -356,6 +296,66 @@ function _estimate_survival_serial(
     end
     
     return result
+end
+
+# =============================================================================
+# Thread-Local Process Management
+# =============================================================================
+
+"""
+Thread-local storage for epidemic processes.
+Each thread gets its own process that's reused across simulations within a single analysis.
+Key: (thread_id, factory_hash)
+"""
+const THREAD_LOCAL_PROCESSES = Dict{Tuple{Int, UInt64}, AbstractEpidemicProcess}()
+const THREAD_PROCESS_LOCK = Threads.SpinLock()
+
+"""
+Get or create a thread-local process for maximum efficiency.
+
+Each thread creates one process and reuses it across all simulations within
+a single estimate_survival_probability call. Simple hashing ensures correctness.
+"""
+function get_thread_local_process(process_factory::Function)::AbstractEpidemicProcess
+    thread_id = Threads.threadid()
+    factory_hash = hash(process_factory)  # Simple, reliable hashing
+    key = (thread_id, factory_hash)
+    
+    # Try to get existing process (lockless read for performance)
+    existing_process = get(THREAD_LOCAL_PROCESSES, key, nothing)
+    if existing_process !== nothing
+        return existing_process
+    end
+    
+    # Need to create new process - use lock for thread safety
+    Threads.lock(THREAD_PROCESS_LOCK) do
+        # Double-check pattern - another thread might have created it
+        existing_process = get(THREAD_LOCAL_PROCESSES, key, nothing)
+        if existing_process !== nothing
+            return existing_process
+        end
+        
+        # Create new process for this thread with error handling
+        try
+            new_process = process_factory()
+            THREAD_LOCAL_PROCESSES[key] = new_process
+            return new_process
+        catch e
+            @error "Failed to create process in thread $thread_id" exception=e
+            rethrow()
+        end
+    end
+end
+
+"""
+Clear all thread-local processes.
+Called automatically at the end of each estimate_survival_probability call.
+"""
+function clear_thread_local_processes!()
+    Threads.lock(THREAD_PROCESS_LOCK) do
+        empty!(THREAD_LOCAL_PROCESSES)
+        GC.gc()  # Force garbage collection to free memory
+    end
 end
 
 # =============================================================================

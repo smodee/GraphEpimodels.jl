@@ -56,7 +56,7 @@ Create a reproducible random number generator.
 """
 function create_rng(seed::Union{Int, Nothing} = nothing)::AbstractRNG
     if seed === nothing
-        return Random.default_rng()
+        return Random.Xoshiro()
     else
         return Random.Xoshiro(seed)  # Julia's default high-performance RNG
     end
