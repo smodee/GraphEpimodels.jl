@@ -113,21 +113,16 @@ function estimate_survival_probability(
         throw(ArgumentError("PersistenceCriterion requires finite max_time"))
     end
 
-    try
-        if use_threading && Threads.nthreads() > 1
-            return _estimate_survival_threaded(
-                process_factory, initial_infected, criterion,
-                num_simulations, max_time, max_steps, mode, start_seed
-            )
-        else
-            return _estimate_survival_serial(
-                process_factory, initial_infected, criterion,
-                num_simulations, max_time, max_steps, mode, start_seed
-            )
-        end
-    finally
-        # Always cleanup thread-local processes after analysis
-        clear_thread_local_processes!()
+    if use_threading && Threads.nthreads() > 1
+        return _estimate_survival_threaded(
+            process_factory, initial_infected, criterion,
+            num_simulations, max_time, max_steps, mode, start_seed
+        )
+    else
+        return _estimate_survival_serial(
+            process_factory, initial_infected, criterion,
+            num_simulations, max_time, max_steps, mode, start_seed
+        )
     end
 end
 
@@ -143,16 +138,18 @@ function _estimate_survival_threaded(
     start_seed::Int
 )::Dict{Symbol, Any}
 
+    # Pre-create one process per thread (eliminates all locking and false sharing)
+    thread_processes = [process_factory() for _ in 1:Threads.nthreads()]
+    
     if mode == MINIMAL
-        # Minimal mode: just count survivals
         survival_count = Threads.Atomic{Int}(0)
         
         @showprogress Threads.@threads for i in 1:num_simulations
+            # Get this thread's dedicated process (no locking needed)
+            thread_process = thread_processes[Threads.threadid()]
+            
             # Calculate seed for this specific simulation
             simulation_seed = start_seed + (i - 1)
-            
-            # Thread-local process - create once per thread, reuse across simulations
-            thread_process = get_thread_local_process(process_factory)
             
             # Reset with specific seed
             reset!(thread_process, initial_infected; rng_seed=simulation_seed)
@@ -182,11 +179,11 @@ function _estimate_survival_threaded(
         results = Vector{NamedTuple{(:survived, :time, :size), Tuple{Bool, Float64, Int}}}(undef, num_simulations)
         
         @showprogress Threads.@threads for i in 1:num_simulations
+            # Get this thread's dedicated process
+            thread_process = thread_processes[Threads.threadid()]
+            
             # Calculate seed for this specific simulation
             simulation_seed = start_seed + (i - 1)
-            
-            # Thread-local process - create once per thread, reuse across simulations
-            thread_process = get_thread_local_process(process_factory)
             
             # Reset with specific seed
             reset!(thread_process, initial_infected; rng_seed=simulation_seed)
@@ -296,66 +293,6 @@ function _estimate_survival_serial(
     end
     
     return result
-end
-
-# =============================================================================
-# Thread-Local Process Management
-# =============================================================================
-
-"""
-Thread-local storage for epidemic processes.
-Each thread gets its own process that's reused across simulations within a single analysis.
-Key: (thread_id, factory_hash)
-"""
-const THREAD_LOCAL_PROCESSES = Dict{Tuple{Int, UInt64}, AbstractEpidemicProcess}()
-const THREAD_PROCESS_LOCK = Threads.SpinLock()
-
-"""
-Get or create a thread-local process for maximum efficiency.
-
-Each thread creates one process and reuses it across all simulations within
-a single estimate_survival_probability call. Simple hashing ensures correctness.
-"""
-function get_thread_local_process(process_factory::Function)::AbstractEpidemicProcess
-    thread_id = Threads.threadid()
-    factory_hash = hash(process_factory)  # Simple, reliable hashing
-    key = (thread_id, factory_hash)
-    
-    # Try to get existing process (lockless read for performance)
-    existing_process = get(THREAD_LOCAL_PROCESSES, key, nothing)
-    if existing_process !== nothing
-        return existing_process
-    end
-    
-    # Need to create new process - use lock for thread safety
-    return Threads.lock(THREAD_PROCESS_LOCK) do
-        # Double-check pattern - another thread might have created it
-        existing_process = get(THREAD_LOCAL_PROCESSES, key, nothing)
-        if existing_process !== nothing
-            existing_process # Return value from lock block
-        else
-            # Create new process for this thread with error handling
-            try
-                new_process = process_factory()
-                THREAD_LOCAL_PROCESSES[key] = new_process
-                new_process # Return value from lock block
-            catch e
-                @error "Failed to create process in thread $thread_id" exception=e
-                rethrow()
-            end
-        end   
-    end
-end
-
-"""
-Clear all thread-local processes.
-Called automatically at the end of each estimate_survival_probability call.
-"""
-function clear_thread_local_processes!()
-    Threads.lock(THREAD_PROCESS_LOCK) do
-        empty!(THREAD_LOCAL_PROCESSES)
-        GC.gc()  # Force garbage collection to free memory
-    end
 end
 
 # =============================================================================
