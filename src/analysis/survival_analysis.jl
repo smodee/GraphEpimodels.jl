@@ -231,8 +231,8 @@ function _estimate_survival_serial(
 )::Dict{Symbol, Any}
 
     # Create process once for serial execution with error handling
-    try
-        process = process_factory()
+    process = try
+        process_factory()
     catch e
         @error "Failed to create process for serial execution" exception=e
         rethrow()
@@ -328,22 +328,22 @@ function get_thread_local_process(process_factory::Function)::AbstractEpidemicPr
     end
     
     # Need to create new process - use lock for thread safety
-    Threads.lock(THREAD_PROCESS_LOCK) do
+    return Threads.lock(THREAD_PROCESS_LOCK) do
         # Double-check pattern - another thread might have created it
         existing_process = get(THREAD_LOCAL_PROCESSES, key, nothing)
         if existing_process !== nothing
-            return existing_process
-        end
-        
-        # Create new process for this thread with error handling
-        try
-            new_process = process_factory()
-            THREAD_LOCAL_PROCESSES[key] = new_process
-            return new_process
-        catch e
-            @error "Failed to create process in thread $thread_id" exception=e
-            rethrow()
-        end
+            existing_process # Return value from lock block
+        else
+            # Create new process for this thread with error handling
+            try
+                new_process = process_factory()
+                THREAD_LOCAL_PROCESSES[key] = new_process
+                new_process # Return value from lock block
+            catch e
+                @error "Failed to create process in thread $thread_id" exception=e
+                rethrow()
+            end
+        end   
     end
 end
 
@@ -423,7 +423,7 @@ function run_parameter_sweep(
     num_sims_vec = Vector{Int}(undef, n_params)
     num_survivals_vec = Vector{Int}(undef, n_params)
     
-    @showprogress for (i, param) in enumerate(parameter_values)
+    for (i, param) in enumerate(parameter_values)
         factory = factory_generator(param)
         
         # Determine starting seed for this parameter
@@ -439,6 +439,8 @@ function run_parameter_sweep(
             # No CSV persistence - always start from seed 1
             1
         end
+
+        @info "Running parameter $i/$(length(parameter_values)): λ=$param, start seed=$start_seed"
         
         # Run survival analysis
         results = estimate_survival_probability(
