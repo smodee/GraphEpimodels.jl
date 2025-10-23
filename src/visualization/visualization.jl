@@ -124,7 +124,7 @@ Each scheme maps epidemic states to colors appropriate for different contexts.
 """
 const COLOR_SCHEMES = Dict{Symbol, Dict{Symbol, Any}}(
     :zim => Dict(
-        :susceptible => :lightgray,
+        :susceptible => :white,
         :infected => :forestgreen,     # Green for zombies
         :removed => :red,              # Red for killed  
         :boundary => :darkgray,

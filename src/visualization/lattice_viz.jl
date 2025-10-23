@@ -71,15 +71,19 @@ function visualize_state(viz::LatticeVisualizer, process::AbstractEpidemicProces
     # Convert linear state array to 2D matrix for heatmap
     state_matrix = _states_to_matrix(states_raw, height, width)
     
-    # Convert to Float64 for heatmap
-    numeric_matrix = Float64.(state_matrix)
-
     # Get colors from scheme
     colors = COLOR_SCHEMES[viz.color_scheme]
-    color_list = [colors[:susceptible], colors[:infected], colors[:removed]]
     
-    # Create the heatmap plot
+    # Create the plot
     plot_title = generate_visualization_title(process)
+
+    # Convert to Float64 for heatmap
+    numeric_matrix = Float64.(state_matrix)
+    if transparent_background
+        color_list = [colors[:background], colors[:infected], colors[:removed]]
+    else
+        color_list = [colors[:susceptible], colors[:infected], colors[:removed]]
+    end
     
     p = heatmap(numeric_matrix,
                title = plot_title,
@@ -89,26 +93,29 @@ function visualize_state(viz::LatticeVisualizer, process::AbstractEpidemicProces
                grid = viz.show_grid,
                colorbar = false,
                c = color_list,
-               clims = (0, 2))
+               clims = (0, 2),
+               xlims = (0.5, width + 0.5),
+               ylims = (0.5, height + 0.5))
     
     # Add boundary highlighting if requested
     if viz.show_boundary && has_boundary(graph)
         _add_boundary_overlay!(p, graph, viz)
     end
 
-    # Set transparent background for the entire plot if needed
-    if transparent_background
-        plot!(p, background_color = RGBA(0,0,0,0))
-    end
-
     # Remove title and minimize margins if trimming
     if trim_plot
         plot!(p, 
-              title = "",  # Remove title
-              margin = 0Plots.mm,  # Remove all margins
-              framestyle = :none,  # Remove frame/axes completely
-              showaxis = false,   # Ensure axes are hidden
-              grid = false)       # Ensure grid is off
+            title = "",              # Remove title
+            margin = 0Plots.mm,      # Remove all margins
+            left_margin = 0Plots.mm,  # Explicitly remove left margin
+            right_margin = 0Plots.mm, # Explicitly remove right margin
+            top_margin = 0Plots.mm,   # Explicitly remove top margin
+            bottom_margin = 0Plots.mm, # Explicitly remove bottom margin
+            framestyle = :none,      # Remove frame/axes completely
+            showaxis = false,        # Ensure axes are hidden
+            grid = false,            # Ensure grid is off
+            axis = nothing,          # Remove axis completely
+            ticks = nothing)         # Remove ticks
     end
     
     return p
