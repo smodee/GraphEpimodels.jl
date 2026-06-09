@@ -109,6 +109,12 @@ export SIRProcess
 export get_sir_statistics
 export create_sir_simulation
 
+# Maki-Thompson Rumor Spreading Model
+include("models/maki_thompson.jl")
+export MakiThompsonProcess
+export get_maki_thompson_statistics
+export create_maki_thompson_simulation
+
 # =============================================================================
 # Utilities
 # =============================================================================
