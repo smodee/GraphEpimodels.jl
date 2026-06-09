@@ -103,6 +103,12 @@ export ZIMProcess
 export has_escaped, get_zim_statistics
 export create_zim_simulation
 
+# SIR Model
+include("models/sir.jl")
+export SIRProcess
+export get_sir_statistics
+export create_sir_simulation
+
 # =============================================================================
 # Utilities
 # =============================================================================
