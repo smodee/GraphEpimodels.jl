@@ -162,10 +162,19 @@ const COLOR_SCHEMES = Dict{Symbol, Dict{Symbol, Any}}(
     :colorblind => Dict(
         :susceptible => :white,
         :infected => :blue,            # Blue/orange for colorblind accessibility
-        :removed => :darkorange,       
+        :removed => :darkorange,
         :boundary => :black,
         :background => :white,
         :name => "Colorblind Safe (Blue/orange)"
+    ),
+
+    :chaseescape => Dict(
+        :susceptible => :white,        # empty
+        :infected => :red,             # prey (red)
+        :removed => :blue,             # predator (blue)
+        :boundary => :black,
+        :background => :white,
+        :name => "Chase-Escape (Prey=red, Predator=blue)"
     )
 )
 
