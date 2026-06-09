@@ -115,6 +115,12 @@ export MakiThompsonProcess
 export get_maki_thompson_statistics
 export create_maki_thompson_simulation
 
+# Chase-Escape Model
+include("models/chasescape.jl")
+export ChaseEscapeProcess
+export get_chase_escape_statistics
+export create_chase_escape_simulation
+
 # =============================================================================
 # Utilities
 # =============================================================================
