@@ -165,6 +165,12 @@ export LatticeVisualizer
 export plot_state, plot_comparison, plot_spread_pattern, set_color_scheme!
 export quick_lattice_plot, save_lattice_plot
 
+# Animated visualization
+include("visualization/animation.jl")
+export FrameSampler, EveryStep, EveryNSteps, TimeInterval
+export SimulationRecording, record_simulation, num_frames
+export animate_recording, animate_simulation
+
 # =============================================================================
 # Package Information and Convenience Functions
 # =============================================================================
