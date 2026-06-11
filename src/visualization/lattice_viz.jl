@@ -61,21 +61,45 @@ function visualize_state(viz::LatticeVisualizer, process::AbstractEpidemicProces
                         trim_plot::Bool = false)
     # Validate compatibility
     validate_visualizer_compatibility(viz, process)
-    
+
     graph = get_graph(process)
-    
-    # Extract lattice dimensions and states
-    width, height = graph.width, graph.height
-    states_raw = node_states_raw(graph)
-    
+
+    return _render_state_matrix(viz, graph, node_states_raw(graph);
+                                title = generate_visualization_title(process),
+                                transparent_background = transparent_background,
+                                trim_plot = trim_plot)
+end
+
+"""
+Render a single lattice state (given as a raw Int8 state vector) to a heatmap plot.
+
+This is the shared rendering core used by both `visualize_state` (live process state)
+and the animation builder (recorded frame snapshots), so animation frames are guaranteed
+to look identical to static snapshots.
+
+# Arguments
+- `viz::LatticeVisualizer`: Visualizer holding color scheme / figure settings
+- `lattice::SquareLattice`: The lattice (for dimensions and boundary)
+- `states_raw::Vector{Int8}`: Node states to draw (0=S, 1=I, 2=R)
+- `title::String`: Plot title (default: empty)
+- `transparent_background::Bool`: Draw susceptible nodes transparent (default: false)
+- `trim_plot::Bool`: Remove title/margins/axes for clean output (default: false)
+
+# Returns
+- Plots.jl plot object
+"""
+function _render_state_matrix(viz::LatticeVisualizer, lattice::SquareLattice,
+                              states_raw::Vector{Int8};
+                              title::String = "",
+                              transparent_background::Bool = false,
+                              trim_plot::Bool = false)
+    width, height = lattice.width, lattice.height
+
     # Convert linear state array to 2D matrix for heatmap
     state_matrix = _states_to_matrix(states_raw, height, width)
-    
+
     # Get colors from scheme
     colors = COLOR_SCHEMES[viz.color_scheme]
-    
-    # Create the plot
-    plot_title = generate_visualization_title(process)
 
     # Convert to Float64 for heatmap
     numeric_matrix = Float64.(state_matrix)
@@ -84,9 +108,9 @@ function visualize_state(viz::LatticeVisualizer, process::AbstractEpidemicProces
     else
         color_list = [colors[:susceptible], colors[:infected], colors[:removed]]
     end
-    
+
     p = heatmap(numeric_matrix,
-               title = plot_title,
+               title = title,
                size = viz.figure_size,
                aspect_ratio = :equal,
                showaxis = false,
@@ -96,15 +120,15 @@ function visualize_state(viz::LatticeVisualizer, process::AbstractEpidemicProces
                clims = (0, 2),
                xlims = (0.5, width + 0.5),
                ylims = (0.5, height + 0.5))
-    
+
     # Add boundary highlighting if requested
-    if viz.show_boundary && has_boundary(graph)
-        _add_boundary_overlay!(p, graph, viz)
+    if viz.show_boundary && has_boundary(lattice)
+        _add_boundary_overlay!(p, lattice, viz)
     end
 
     # Remove title and minimize margins if trimming
     if trim_plot
-        plot!(p, 
+        plot!(p,
             title = "",              # Remove title
             margin = 0Plots.mm,      # Remove all margins
             left_margin = 0Plots.mm,  # Explicitly remove left margin
@@ -117,7 +141,7 @@ function visualize_state(viz::LatticeVisualizer, process::AbstractEpidemicProces
             axis = nothing,          # Remove axis completely
             ticks = nothing)         # Remove ticks
     end
-    
+
     return p
 end
 
