@@ -39,7 +39,7 @@ module GraphEpimodels
 
 using Random
 using Statistics
-using Plots
+using CairoMakie
 using Colors
 using ProgressMeter
 
@@ -161,19 +161,22 @@ export check_threading_setup, get_recommended_threads
 # Visualization
 # =============================================================================
 
-# Abstract visualization interface
+# Abstract visualization interface + visualizer dispatch
 include("visualization/visualization.jl")
-export AbstractVisualizer, StaticVisualizer, InteractiveVisualizer, TimeSeriesVisualizer
+export AbstractVisualizer, StaticVisualizer, InteractiveVisualizer
 export visualize_state, supported_graph_types, can_visualize
+export visualizer_for, create_auto_visualizer, render_frame
 export COLOR_SCHEMES, get_state_color, available_color_schemes, print_color_schemes
 export extract_visualization_data, generate_visualization_title
 export FIGURE_SIZES, get_figure_size
 
-# Lattice visualization
+# Lattice visualization (square / triangular / hexagonal)
 include("visualization/lattice_viz.jl")
-export LatticeVisualizer
-export plot_state, plot_comparison, plot_spread_pattern, set_color_scheme!
-export quick_lattice_plot, save_lattice_plot
+export LatticeVisualizer, save_lattice_plot
+
+# Network visualization (general adjacency graphs)
+include("visualization/network_viz.jl")
+export NetworkVisualizer
 
 # Animated visualization
 include("visualization/animation.jl")
