@@ -41,6 +41,41 @@ This design allows epidemic processes to work with any graph structure
 """
 abstract type AbstractEpidemicGraph end
 
+"""
+Abstract base type for regular lattice graphs (square, triangular, hexagonal).
+
+Lattice graphs share a key property: their connectivity is *implicit* in a
+regular geometric arrangement, so neighbors are computed by O(1) coordinate
+arithmetic rather than stored as explicit adjacency lists. They also carry an
+intrinsic spatial layout (see the geometry interface below), which the
+visualization layer uses to draw them as dual-tiling cells.
+
+This is a sibling of `AdjacencyGraph` (which stores explicit adjacency lists and
+has no intrinsic geometry), not a supertype of it: lattices deliberately avoid
+materializing adjacency lists.
+"""
+abstract type AbstractLatticeGraph <: AbstractEpidemicGraph end
+
+"""
+Pre-compute the perimeter node indices of a `width × height` rectangular array.
+
+A node is on the perimeter if it sits in the first/last row or column. Shared by
+lattice constructors for absorbing-boundary node lists; `coord_to_index(row,
+col)` maps a 1-indexed coordinate to the lattice's linear index.
+"""
+# Half of √3, the vertical pitch shared by the triangular/hexagonal lattices.
+const _SQRT3_2 = sqrt(3) / 2
+
+function _compute_perimeter_nodes(width::Int, height::Int, coord_to_index)::Vector{Int}
+    nodes = Int[]
+    for row in 1:height, col in 1:width
+        if row == 1 || row == height || col == 1 || col == width
+            push!(nodes, coord_to_index(row, col))
+        end
+    end
+    return nodes
+end
+
 # =============================================================================
 # Core Interface Methods (REQUIRED - must be implemented by all graph types)
 # =============================================================================
@@ -136,7 +171,78 @@ function has_boundary(graph::AbstractEpidemicGraph)::Bool
 end
 
 # =============================================================================
-# Public API (External Interface with Type Safety)  
+# Geometry Interface (Optional - consumed by the visualization layer)
+# =============================================================================
+#
+# Topology (who connects to whom) is what the simulation engine needs and is
+# covered by the interface above. Geometry (where each node sits in space) is
+# needed only for plotting, so it lives in this separate, optional interface
+# with safe defaults: a graph with no intrinsic layout (e.g. a bare
+# AdjacencyGraph) needs to implement nothing, and the visualizer falls back to a
+# computed layout.
+
+"""
+Whether the graph carries an intrinsic (or attached) spatial layout.
+
+Default: `false`. Lattices return `true`; an `AdjacencyGraph` returns `true`
+only when node coordinates have been attached.
+"""
+function has_layout(graph::AbstractEpidemicGraph)::Bool
+    return false
+end
+
+"""
+Dimensionality of the node layout (2 or 3); `0` when there is no layout.
+
+Default: `0`. 2D graphs return `2`; this becomes `3` for future 3D graphs with
+no change to the rest of the interface.
+"""
+function layout_dim(graph::AbstractEpidemicGraph)::Int
+    return 0
+end
+
+"""
+Node coordinates as a `dim × N` matrix (column `i` is the position of node `i`).
+
+Using `dim × N` (rather than `N × dim`) keeps each node's coordinates
+contiguous in Julia's column-major storage and makes the 3D extension a pure
+shape change (`2 × N` → `3 × N`).
+
+No default: graphs that report `has_layout() == true` must implement this.
+"""
+function node_positions(graph::AbstractEpidemicGraph)::Matrix{Float64}
+    error("node_positions must be implemented by graph type $(typeof(graph)) " *
+          "that reports has_layout() == true")
+end
+
+"""
+Whether the graph fills space with one polygonal cell per node (a tiling).
+
+Default: `false`. Regular lattices return `true` and supply `cell_polygons`;
+general networks return `false` and are drawn as node-link diagrams instead.
+"""
+function has_cells(graph::AbstractEpidemicGraph)::Bool
+    return false
+end
+
+"""
+Per-node cell polygons for tiling visualization.
+
+Returns one entry per node; each entry is a `2 × V` matrix whose columns are the
+polygon vertices (in order) of that node's cell. The cell is the *dual* of the
+lattice, so the number of vertices equals the node's degree and each cell edge
+corresponds to one outgoing graph edge (square→square, triangular→hexagon,
+hexagonal→triangle).
+
+No default: graphs that report `has_cells() == true` must implement this.
+"""
+function cell_polygons(graph::AbstractEpidemicGraph)::Vector{Matrix{Float64}}
+    error("cell_polygons must be implemented by graph type $(typeof(graph)) " *
+          "that reports has_cells() == true")
+end
+
+# =============================================================================
+# Public API (External Interface with Type Safety)
 # =============================================================================
 
 """

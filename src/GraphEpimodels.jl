@@ -52,7 +52,7 @@ export Random
 
 # Abstract graph interface and core types
 include("graphs/graphs.jl")
-export AbstractEpidemicGraph
+export AbstractEpidemicGraph, AbstractLatticeGraph
 export NodeState, SUSCEPTIBLE, INFECTED, REMOVED, S, I, R
 export BoundaryCondition, ABSORBING, PERIODIC
 export state_to_int, int_to_state
@@ -65,6 +65,9 @@ export get_node_degree, get_boundary_nodes, has_boundary
 export count_states, get_nodes_in_state, count_neighbors_by_state
 export get_active_edges
 
+# Geometry interface (consumed by visualization)
+export has_layout, layout_dim, node_positions, has_cells, cell_polygons
+
 # Square lattice implementation
 include("graphs/lattice.jl")
 export SquareLattice
@@ -72,11 +75,18 @@ export coord_to_index, index_to_coord
 export get_center_node, get_random_nodes, distance_to_boundary
 export create_square_lattice, create_torus
 
+# Triangular lattice (6-neighbor) and hexagonal/honeycomb lattice (3-neighbor)
+include("graphs/triangular_lattice.jl")
+export TriangularLattice, create_triangular_lattice
+include("graphs/hexagonal_lattice.jl")
+export HexagonalLattice, create_hexagonal_lattice
+
 # General graph implementation (adjacency lists)
 include("graphs/adjacency.jl")
-export AdjacencyGraph
+export AdjacencyGraph, set_coords!
 export create_graph_from_matrix, create_graph_from_edges
 export create_complete_graph, create_path_graph, create_cycle_graph, create_star_graph
+export create_random_graph
 
 # =============================================================================
 # Epidemic Process Framework
