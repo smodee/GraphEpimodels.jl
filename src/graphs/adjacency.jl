@@ -24,31 +24,51 @@ Uses primitive Int8 states for maximum performance and minimal memory usage.
 - `n_nodes::Int`: Total number of nodes (pre-computed)
 - `states::Vector{Int8}`: Node states (primitive array)
 - `node_degrees::Vector{Int}`: Pre-computed node degrees (optional optimization)
+- `coords::Union{Matrix{Float64}, Nothing}`: Optional `dim × n` node coordinates
+  for plotting (column `i` = position of node `i`). `nothing` means no layout,
+  and the visualizer computes one (e.g. force-directed).
 """
 mutable struct AdjacencyGraph <: AbstractEpidemicGraph
     adjacency_list::Vector{Vector{Int}}
     n_nodes::Int
     states::Vector{Int8}
     node_degrees::Vector{Int}  # Pre-computed for performance
-    
-    function AdjacencyGraph(adjacency_list::Vector{Vector{Int}})
+    coords::Union{Matrix{Float64}, Nothing}
+
+    function AdjacencyGraph(adjacency_list::Vector{Vector{Int}};
+                            coords::Union{AbstractMatrix{<:Real}, Nothing} = nothing)
         n = length(adjacency_list)
-        
+
         if n == 0
             throw(ArgumentError("Graph must have at least one node"))
         end
-        
+
         # Validate adjacency list structure
         _validate_adjacency_list(adjacency_list)
-        
+
         # Pre-compute node degrees for performance
         node_degrees = [length(neighbors) for neighbors in adjacency_list]
-        
+
         # Initialize all nodes as susceptible
         states = zeros(Int8, n)
-        
-        new(adjacency_list, n, states, node_degrees)
+
+        coords_mat = _validate_coords(coords, n)
+
+        new(adjacency_list, n, states, node_degrees, coords_mat)
     end
+end
+
+"""Validate optional node coordinates and normalize to `Matrix{Float64}` (dim × n)."""
+function _validate_coords(coords::Union{AbstractMatrix{<:Real}, Nothing}, n::Int)
+    coords === nothing && return nothing
+    dim = size(coords, 1)
+    if dim != 2 && dim != 3
+        throw(ArgumentError("coords must have 2 or 3 rows (got $dim); shape is dim × n"))
+    end
+    if size(coords, 2) != n
+        throw(ArgumentError("coords must have one column per node: expected $n, got $(size(coords, 2))"))
+    end
+    return Matrix{Float64}(coords)
 end
 
 # =============================================================================
@@ -87,6 +107,29 @@ end
 # Boundary nodes: empty for general graphs (no spatial boundary concept)
 function get_boundary_nodes(graph::AdjacencyGraph)::Vector{Int}
     return Int[]
+end
+
+# =============================================================================
+# Geometry Interface (for visualization)
+# =============================================================================
+#
+# A general graph has a layout only if coordinates were attached at construction.
+# It never fills space with cells, so the visualizer draws it as a node-link
+# diagram (markers + edges), computing a layout when none is attached.
+
+has_layout(graph::AdjacencyGraph)::Bool = graph.coords !== nothing
+layout_dim(graph::AdjacencyGraph)::Int = graph.coords === nothing ? 0 : size(graph.coords, 1)
+
+function node_positions(graph::AdjacencyGraph)::Matrix{Float64}
+    graph.coords === nothing &&
+        error("AdjacencyGraph has no attached coordinates; has_layout() is false")
+    return graph.coords
+end
+
+"""Attach (or replace) node coordinates on an existing graph (`dim × n`)."""
+function set_coords!(graph::AdjacencyGraph, coords::AbstractMatrix{<:Real})
+    graph.coords = _validate_coords(coords, graph.n_nodes)
+    return graph
 end
 
 # =============================================================================
@@ -167,19 +210,20 @@ julia> matrix = [false true false; true false true; false true false]
 julia> graph = create_graph_from_matrix(matrix)  # Path graph: 1-2-3
 ```
 """
-function create_graph_from_matrix(adj_matrix::Matrix{Bool})::AdjacencyGraph
+function create_graph_from_matrix(adj_matrix::Matrix{Bool};
+                                  coords::Union{AbstractMatrix{<:Real}, Nothing} = nothing)::AdjacencyGraph
     n = size(adj_matrix, 1)
     if size(adj_matrix, 2) != n
         throw(ArgumentError("Adjacency matrix must be square, got $(size(adj_matrix))"))
     end
-    
+
     adjacency_list = Vector{Vector{Int}}(undef, n)
-    
+
     for i in 1:n
         adjacency_list[i] = findall(adj_matrix[i, :])
     end
-    
-    return AdjacencyGraph(adjacency_list)
+
+    return AdjacencyGraph(adjacency_list; coords = coords)
 end
 
 """
@@ -198,7 +242,8 @@ julia> edges = [(1, 2), (2, 3), (3, 1)]  # Triangle
 julia> graph = create_graph_from_edges(3, edges)
 ```
 """
-function create_graph_from_edges(n_nodes::Int, edges::Vector{Tuple{Int, Int}})::AdjacencyGraph
+function create_graph_from_edges(n_nodes::Int, edges::Vector{Tuple{Int, Int}};
+                                 coords::Union{AbstractMatrix{<:Real}, Nothing} = nothing)::AdjacencyGraph
     if n_nodes < 1
         throw(ArgumentError("Number of nodes must be positive"))
     end
@@ -228,8 +273,8 @@ function create_graph_from_edges(n_nodes::Int, edges::Vector{Tuple{Int, Int}})::
     for neighbors in adjacency_list
         sort!(neighbors)
     end
-    
-    return AdjacencyGraph(adjacency_list)
+
+    return AdjacencyGraph(adjacency_list; coords = coords)
 end
 
 """

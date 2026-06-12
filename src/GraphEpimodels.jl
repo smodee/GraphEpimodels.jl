@@ -39,7 +39,7 @@ module GraphEpimodels
 
 using Random
 using Statistics
-using Plots
+using CairoMakie
 using Colors
 using ProgressMeter
 
@@ -52,7 +52,7 @@ export Random
 
 # Abstract graph interface and core types
 include("graphs/graphs.jl")
-export AbstractEpidemicGraph
+export AbstractEpidemicGraph, AbstractLatticeGraph
 export NodeState, SUSCEPTIBLE, INFECTED, REMOVED, S, I, R
 export BoundaryCondition, ABSORBING, PERIODIC
 export state_to_int, int_to_state
@@ -65,6 +65,9 @@ export get_node_degree, get_boundary_nodes, has_boundary
 export count_states, get_nodes_in_state, count_neighbors_by_state
 export get_active_edges
 
+# Geometry interface (consumed by visualization)
+export has_layout, layout_dim, node_positions, has_cells, cell_polygons
+
 # Square lattice implementation
 include("graphs/lattice.jl")
 export SquareLattice
@@ -72,11 +75,18 @@ export coord_to_index, index_to_coord
 export get_center_node, get_random_nodes, distance_to_boundary
 export create_square_lattice, create_torus
 
+# Triangular lattice (6-neighbor) and hexagonal/honeycomb lattice (3-neighbor)
+include("graphs/triangular_lattice.jl")
+export TriangularLattice, create_triangular_lattice
+include("graphs/hexagonal_lattice.jl")
+export HexagonalLattice, create_hexagonal_lattice
+
 # General graph implementation (adjacency lists)
 include("graphs/adjacency.jl")
-export AdjacencyGraph
+export AdjacencyGraph, set_coords!
 export create_graph_from_matrix, create_graph_from_edges
 export create_complete_graph, create_path_graph, create_cycle_graph, create_star_graph
+export create_random_graph
 
 # =============================================================================
 # Epidemic Process Framework
@@ -151,19 +161,22 @@ export check_threading_setup, get_recommended_threads
 # Visualization
 # =============================================================================
 
-# Abstract visualization interface
+# Abstract visualization interface + visualizer dispatch
 include("visualization/visualization.jl")
-export AbstractVisualizer, StaticVisualizer, InteractiveVisualizer, TimeSeriesVisualizer
+export AbstractVisualizer, StaticVisualizer, InteractiveVisualizer
 export visualize_state, supported_graph_types, can_visualize
+export visualizer_for, create_auto_visualizer, render_frame
 export COLOR_SCHEMES, get_state_color, available_color_schemes, print_color_schemes
 export extract_visualization_data, generate_visualization_title
 export FIGURE_SIZES, get_figure_size
 
-# Lattice visualization
+# Lattice visualization (square / triangular / hexagonal)
 include("visualization/lattice_viz.jl")
-export LatticeVisualizer
-export plot_state, plot_comparison, plot_spread_pattern, set_color_scheme!
-export quick_lattice_plot, save_lattice_plot
+export LatticeVisualizer, save_lattice_plot
+
+# Network visualization (general adjacency graphs)
+include("visualization/network_viz.jl")
+export NetworkVisualizer
 
 # Animated visualization
 include("visualization/animation.jl")

@@ -305,25 +305,37 @@ This is a convenience function for users who don't want to choose manually.
 # Returns
 - `AbstractVisualizer`: Appropriate visualizer for this graph type
 """
-function create_auto_visualizer(graph::AbstractEpidemicGraph, 
-                               color_scheme::Symbol = :zim; 
+function create_auto_visualizer(graph::AbstractEpidemicGraph,
+                               color_scheme::Symbol = :zim;
                                kwargs...)::AbstractVisualizer
-    
-    # This would be implemented once we have concrete visualizer types
-    # For now, throw an informative error
-    graph_type = typeof(graph)
-    
-    error("""
-    Auto-visualizer creation not yet implemented for graph type: $graph_type
-    
-    Please use a specific visualizer:
-    - For SquareLattice: use LatticeVisualizer from lattice_viz.jl  
-    - For AdjacencyGraph: use NetworkVisualizer from network_viz.jl
-    
-    Example:
-      visualizer = LatticeVisualizer(color_scheme=:$color_scheme)
-      plot = visualize_state(visualizer, process)
-    """)
+    return visualizer_for(graph; color_scheme = color_scheme, kwargs...)
+end
+
+# =============================================================================
+# Visualizer Dispatch (graph type -> appropriate visualizer)
+# =============================================================================
+#
+# Multiple dispatch picks the most specific method: all lattices (square,
+# triangular, hexagonal) get the LatticeVisualizer; general graphs get the
+# NetworkVisualizer. Adding a 3D branch later is purely additive. The concrete
+# visualizer types are defined in lattice_viz.jl / network_viz.jl (included
+# after this file); these bodies run only when called, so the forward reference
+# is fine.
+
+"""
+Return an appropriate visualizer for `graph`, selected by its type.
+
+- `AbstractLatticeGraph` (square / triangular / hexagonal) → `LatticeVisualizer`
+- `AdjacencyGraph` → `NetworkVisualizer`
+
+Extra keyword arguments are forwarded to the visualizer constructor.
+"""
+function visualizer_for(graph::AbstractLatticeGraph; kwargs...)::AbstractVisualizer
+    return LatticeVisualizer(; kwargs...)
+end
+
+function visualizer_for(graph::AdjacencyGraph; kwargs...)::AbstractVisualizer
+    return NetworkVisualizer(; kwargs...)
 end
 
 # =============================================================================

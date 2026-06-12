@@ -34,7 +34,7 @@ All state operations use primitive Int8 arrays for maximum performance.
 - `states::Vector{Int8}`: Node states (primitive array)
 - `boundary_nodes::Vector{Int}`: Pre-computed boundary node indices (for absorbing)
 """
-mutable struct SquareLattice <: AbstractEpidemicGraph
+mutable struct SquareLattice <: AbstractLatticeGraph
     width::Int
     height::Int
     n_nodes::Int
@@ -348,6 +348,42 @@ function count_neighbors_by_state(lattice::SquareLattice, node_id::Int,
     end
     
     return count
+end
+
+# =============================================================================
+# Geometry Interface (for visualization)
+# =============================================================================
+#
+# A square lattice node at (row, col) sits at the integer point (x=col, y=row).
+# Its dual cell is the unit square centered on that point — the square tiling is
+# self-dual, so each of the 4 cell edges corresponds to one of the 4 neighbors.
+
+has_layout(::SquareLattice)::Bool = true
+layout_dim(::SquareLattice)::Int = 2
+has_cells(::SquareLattice)::Bool = true
+
+function node_positions(lattice::SquareLattice)::Matrix{Float64}
+    n = lattice.n_nodes
+    pos = Matrix{Float64}(undef, 2, n)
+    @inbounds for idx in 1:n
+        row, col = _index_to_coord(idx, lattice.height)
+        pos[1, idx] = Float64(col)
+        pos[2, idx] = Float64(row)
+    end
+    return pos
+end
+
+function cell_polygons(lattice::SquareLattice)::Vector{Matrix{Float64}}
+    n = lattice.n_nodes
+    cells = Vector{Matrix{Float64}}(undef, n)
+    @inbounds for idx in 1:n
+        row, col = _index_to_coord(idx, lattice.height)
+        x = Float64(col); y = Float64(row)
+        # Unit square (counter-clockwise) centered on the node.
+        cells[idx] = [x-0.5 x+0.5 x+0.5 x-0.5;
+                      y-0.5 y-0.5 y+0.5 y+0.5]
+    end
+    return cells
 end
 
 # =============================================================================

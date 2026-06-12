@@ -133,11 +133,16 @@ function reset!(process::SIRProcess,
     states = node_states_raw(process.graph)
     fill!(states, state_to_int(SUSCEPTIBLE))
 
+    # Mark every seed infected first, then compute susceptible-neighbor counts.
+    # Counting in the same pass would let an earlier seed see a later seed as
+    # still susceptible, leaving its boundary count stale-high.
     infected_state = state_to_int(INFECTED)
     for node_id in initial_infected
         states[node_id] = infected_state
         push!(process.infected_nodes, node_id)
+    end
 
+    for node_id in initial_infected
         susceptible_count = count_neighbors_by_state(process.graph, node_id, SUSCEPTIBLE)
         add_active_node!(process.active_tracker, node_id, susceptible_count)
     end

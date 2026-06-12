@@ -147,11 +147,15 @@ function reset!(process::ZIMProcess,
     states = node_states_raw(process.graph)
     fill!(states, state_to_int(SUSCEPTIBLE))
     
-    # Set initial infected nodes and build active tracking
+    # Mark every seed infected first, then build active tracking in a second
+    # pass. Counting susceptible neighbors in the same loop would let an earlier
+    # seed see a later seed as still susceptible, leaving its count stale-high.
     infected_state = state_to_int(INFECTED)
     for node_id in initial_infected
         states[node_id] = infected_state
-        
+    end
+
+    for node_id in initial_infected
         # Add to active tracking if it has susceptible neighbors
         susceptible_count = count_neighbors_by_state(process.graph, node_id, SUSCEPTIBLE)
         add_active_node!(process.active_tracker, node_id, susceptible_count)

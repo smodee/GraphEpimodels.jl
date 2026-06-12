@@ -82,4 +82,45 @@ animate_model("Chase-escape",
     () -> create_chase_escape_simulation(L, L, 3.0, 1.0; ghost=true, initial_red=patch, rng_seed=SEED);
     color_scheme = :chaseescape, filename = "chase_escape.gif")
 
+# =============================================================================
+# SIR on other graph topologies (triangular / hexagonal lattices, general graph)
+# =============================================================================
+#
+# These reuse the same animation machinery via `visualizer_for`: lattices render
+# as dual-tiling cells (triangular -> hexagons, hexagonal -> triangles), and a
+# general adjacency graph renders as a node-link diagram with a force-directed
+# layout.
+
+"""Center node plus its neighbors, as a robust seed for an arbitrary graph."""
+function center_seed(g)
+    c = (num_nodes(g) + 1) ÷ 2
+    return unique(vcat(c, get_neighbors(g, c)))
+end
+
+"""Build a fresh, identically-seeded SIR process on `graph` seeded at `seeds`."""
+function sir_builder(graph_factory, seed_fn; β = 3.0, γ = 1.0)
+    return function ()
+        g = graph_factory()
+        p = SIRProcess(g, β, γ; rng = Random.MersenneTwister(SEED))
+        reset!(p, seed_fn(g); rng_seed = SEED)
+        return p
+    end
+end
+
+# 5. SIR on a triangular lattice (6-neighbor) — drawn with hexagonal cells.
+animate_model("SIR (triangular)",
+    sir_builder(() -> create_triangular_lattice(45, 45), center_seed);
+    color_scheme = :sir, filename = "sir_triangular.gif")
+
+# 6. SIR on a hexagonal/honeycomb lattice (3-neighbor) — drawn with triangular cells.
+animate_model("SIR (hexagonal)",
+    sir_builder(() -> create_hexagonal_lattice(45, 45), center_seed);
+    color_scheme = :sir, filename = "sir_hexagonal.gif")
+
+# 7. SIR on a general graph (Erdős–Rényi) — node-link diagram, spring layout.
+animate_model("SIR (network)",
+    sir_builder(() -> create_random_graph(80, 0.06, Random.MersenneTwister(SEED)),
+                g -> [argmax([length(get_neighbors(g, i)) for i in 1:num_nodes(g)])]);
+    color_scheme = :sir, filename = "sir_network.gif")
+
 println("Done. GIFs written to: $OUTDIR")

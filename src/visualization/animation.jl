@@ -13,6 +13,10 @@ Two sampling regimes (see `FrameSampler`):
 - `EveryStep()`      — one frame per transition; best for small lattices where
   every single event is interesting.
 
+Output format follows the filename extension: `.gif` or `.mp4` both work via the
+Makie/CairoMakie `record` backend. Works for any graph type — lattices render as
+dual-tiling cells, general graphs as node-link diagrams — via `visualizer_for`.
+
 # Example
 ```julia
 using GraphEpimodels
@@ -23,11 +27,11 @@ animate_simulation(sir; sampler=EveryStep(), color_scheme=:sir, filename="sir_sm
 
 # Large lattice — equal-time sampling for faithful playback
 big = create_sir_simulation(200, 200, 0.6, 1.0; initial_infected=:center, rng_seed=1)
-animate_simulation(big; sampler=TimeInterval(0.5), max_time=40.0, filename="sir_large.gif")
+animate_simulation(big; sampler=TimeInterval(0.5), max_time=40.0, filename="sir_large.mp4")
 ```
 """
 
-using Plots
+using CairoMakie
 
 # =============================================================================
 # Frame Samplers — decide *when* a snapshot is captured
@@ -266,23 +270,42 @@ end
 # Animation Builder
 # =============================================================================
 
-"""
-Render a recording to an animated GIF using the lattice heatmap.
+# Draw one recorded frame into an existing axis, dispatched on visualizer type.
+# Reuses the same drawing cores as the static `render_frame`, so animation frames
+# look identical to static snapshots.
+_draw_frame!(ax, viz::LatticeVisualizer, graph, states; positions = nothing) =
+    _draw_lattice!(ax, viz, graph, states)
+_draw_frame!(ax, viz::NetworkVisualizer, graph, states; positions = nothing) =
+    _draw_network!(ax, viz, graph, states; positions = positions)
 
-Each frame is drawn with the same `_render_state_matrix` core used by
-`visualize_state`, so frames look identical to static snapshots.
+"""Fixed drawing limits (with margin) so the view doesn't jitter between frames."""
+function _frame_limits(positions::Matrix{Float64})
+    xlo, xhi = extrema(@view positions[1, :])
+    ylo, yhi = extrema(@view positions[2, :])
+    mx = 0.05 * (xhi - xlo) + 1.0
+    my = 0.05 * (yhi - ylo) + 1.0
+    return (xlo - mx, xhi + mx, ylo - my, yhi + my)
+end
+
+"""
+Render a recording to an animated GIF or MP4 (format from the extension).
+
+Each frame is drawn with the same drawing core used by `visualize_state`, so
+frames look identical to static snapshots. The visualizer is chosen by graph type
+via `visualizer_for`, so this works for square / triangular / hexagonal lattices
+and for general (adjacency) graphs alike.
 
 # Arguments
-- `rec::SimulationRecording`: The recording to animate (must be on a `SquareLattice`)
+- `rec::SimulationRecording`: The recording to animate
 - `color_scheme::Symbol`: Color scheme (default: `:sir`)
-- `fps::Int`: Frames per second of the output GIF (default: 15)
-- `filename::String`: Output path (default: "simulation.gif")
+- `fps::Int`: Frames per second of the output (default: 15)
+- `filename::String`: Output path; `.gif` or `.mp4` (default: "simulation.gif")
 - `figure_size::Tuple{Int, Int}`: Frame size in pixels (default: (600, 600))
-- `show_boundary::Bool`: Highlight the lattice boundary (default: false)
-- `show_grid::Bool`: Show grid lines between nodes (default: false)
+- `show_boundary::Bool`: Outline the lattice boundary (lattices only; default: false)
+- `show_grid::Bool`: Stroke cell outlines (cell lattices only; default: false)
 
 # Returns
-- `Plots.AnimatedGif`: The saved animation (also displays inline in notebooks)
+- `String`: The output filename.
 """
 function animate_recording(rec::SimulationRecording;
                            color_scheme::Symbol = :sir,
@@ -292,25 +315,33 @@ function animate_recording(rec::SimulationRecording;
                            show_boundary::Bool = false,
                            show_grid::Bool = false)
     graph = rec.graph
-    graph isa SquareLattice ||
-        throw(ArgumentError("animate_recording currently supports SquareLattice graphs only, " *
-                            "got $(typeof(graph))"))
-
-    viz = LatticeVisualizer(color_scheme = color_scheme,
-                            figure_size = figure_size,
-                            show_boundary = show_boundary,
-                            show_grid = show_grid)
-
-    anim = Animation()
-    for idx in 1:num_frames(rec)
-        p = _render_state_matrix(viz, graph, rec.frames[idx];
-                                 title = _frame_title(rec, idx))
-        frame(anim, p)
+    viz = visualizer_for(graph; color_scheme = color_scheme, figure_size = figure_size)
+    if viz isa LatticeVisualizer
+        viz.show_boundary = show_boundary
+        viz.show_grid = show_grid
     end
 
-    result = gif(anim, filename; fps = fps)
-    println("Animation saved to: $filename ($(num_frames(rec)) frames, $fps fps)")
-    return result
+    # A general graph gets a single fixed layout so nodes don't move between frames.
+    positions = graph isa AdjacencyGraph ? _resolve_positions(graph) :
+                node_positions(graph)
+    xlo, xhi, ylo, yhi = _frame_limits(positions)
+
+    fig = Figure(size = figure_size)
+    ax = Axis(fig[1, 1]; aspect = DataAspect())
+    hidedecorations!(ax)
+    hidespines!(ax)
+    limits!(ax, xlo, xhi, ylo, yhi)
+
+    layout_pos = graph isa AdjacencyGraph ? positions : nothing
+    n = num_frames(rec)
+    record(fig, filename, 1:n; framerate = fps) do idx
+        empty!(ax)
+        ax.title = _frame_title(rec, idx)
+        _draw_frame!(ax, viz, graph, rec.frames[idx]; positions = layout_pos)
+    end
+
+    println("Animation saved to: $filename ($n frames, $fps fps)")
+    return filename
 end
 
 # =============================================================================

@@ -1,152 +1,171 @@
 """
-Heatmap visualization for epidemic processes on square lattices.
+Makie visualization for epidemic processes on regular lattices.
 
-Provides efficient heatmap rendering for large lattices with customizable
-colors and styling options.
+`LatticeVisualizer` renders any `AbstractLatticeGraph` — square, triangular, or
+hexagonal — using the *dual-tiling* convention: each node is drawn as the
+polygonal cell dual to the lattice, so the cell's side count equals the node's
+degree (square→square, triangular→hexagon, hexagonal→triangle). Square lattices
+take a fast `image!` path; triangular/hexagonal use `poly!` over their dual
+cells (from `cell_polygons`).
+
+Colors come from the shared `COLOR_SCHEMES` table; state 0/1/2 maps to
+susceptible/infected/removed.
 """
 
-# Import required packages and interfaces
-# Note: This assumes Plots.jl is available (commented out in main module)
-using Plots
-
-# Import visualization interface (assumes visualization.jl is loaded)
+using CairoMakie
 
 # =============================================================================
-# Lattice Heatmap Visualizer
+# Lattice Visualizer
 # =============================================================================
 
 """
-Static heatmap visualizer for square lattices.
-
-Creates 2D heatmap visualizations showing the spatial distribution of epidemic
-states across the lattice. Optimized for large lattices with efficient rendering.
+Static visualizer for regular lattices (square, triangular, hexagonal).
 
 # Fields
-- `color_scheme::Symbol`: Color scheme to use (from visualization.jl)
-- `show_boundary::Bool`: Whether to highlight boundary nodes
+- `color_scheme::Symbol`: Color scheme (from visualization.jl)
+- `show_boundary::Bool`: Outline the lattice boundary
 - `figure_size::Tuple{Int, Int}`: Figure dimensions in pixels
-- `show_grid::Bool`: Whether to show grid lines between nodes
+- `show_grid::Bool`: Stroke cell outlines (cell path only)
 """
 mutable struct LatticeVisualizer <: StaticVisualizer
     color_scheme::Symbol
     show_boundary::Bool
     figure_size::Tuple{Int, Int}
     show_grid::Bool
-    
-    function LatticeVisualizer(; 
+
+    function LatticeVisualizer(;
                               color_scheme::Symbol = :zim,
                               show_boundary::Bool = false,
                               figure_size::Tuple{Int, Int} = (600, 600),
                               show_grid::Bool = false)
-        
-        # Validate color scheme
         if color_scheme ∉ available_color_schemes()
             throw(ArgumentError("Unknown color scheme: $color_scheme. Available: $(available_color_schemes())"))
         end
-        
         new(color_scheme, show_boundary, figure_size, show_grid)
     end
+end
+
+function supported_graph_types(viz::LatticeVisualizer)::Vector{Type}
+    return [SquareLattice, TriangularLattice, HexagonalLattice]
+end
+
+can_visualize(viz::LatticeVisualizer, graph::AbstractLatticeGraph)::Bool = true
+
+# =============================================================================
+# Color helpers
+# =============================================================================
+
+"""Resolve a color scheme to concrete `(susceptible, infected, removed)` colors."""
+function _state_colors(scheme::Symbol; transparent_background::Bool = false)
+    cs = COLOR_SCHEMES[scheme]
+    susceptible = transparent_background ? RGBAf(0, 0, 0, 0) : to_color(cs[:susceptible])
+    return (susceptible, to_color(cs[:infected]), to_color(cs[:removed]))
+end
+
+"""Per-node color vector for the given raw states (0=S, 1=I, 2=R)."""
+function _node_colors(scheme::Symbol, states_raw::Vector{Int8};
+                      transparent_background::Bool = false)
+    cS, cI, cR = _state_colors(scheme; transparent_background = transparent_background)
+    palette = (cS, cI, cR)
+    return [palette[Int(s) + 1] for s in states_raw]
+end
+
+# =============================================================================
+# Rendering core
+# =============================================================================
+
+"""Create a clean figure + axis (equal aspect, no decorations) for a lattice frame."""
+function _lattice_axis(viz::LatticeVisualizer; title::String = "",
+                       transparent_background::Bool = false)
+    bg = transparent_background ? :transparent : :white
+    fig = Figure(size = viz.figure_size, backgroundcolor = bg)
+    ax = Axis(fig[1, 1]; title = title, aspect = DataAspect(),
+              backgroundcolor = bg)
+    hidedecorations!(ax)
+    hidespines!(ax)
+    return fig, ax
+end
+
+"""
+Render a single lattice state (raw Int8 vector) to a Makie `Figure`.
+
+Shared by `visualize_state` (live state) and the animation builder (recorded
+frames), so animation frames look identical to static snapshots.
+"""
+function render_frame(viz::LatticeVisualizer, lattice::AbstractLatticeGraph,
+                      states_raw::Vector{Int8}; title::String = "",
+                      transparent_background::Bool = false)
+    fig, ax = _lattice_axis(viz; title = title,
+                            transparent_background = transparent_background)
+    _draw_lattice!(ax, viz, lattice, states_raw;
+                   transparent_background = transparent_background)
+    return fig
+end
+
+# Square lattice: fast path via a per-pixel color image.
+function _draw_lattice!(ax, viz::LatticeVisualizer, lattice::SquareLattice,
+                        states_raw::Vector{Int8}; transparent_background::Bool = false)
+    width, height = lattice.width, lattice.height
+    cS, cI, cR = _state_colors(viz.color_scheme;
+                               transparent_background = transparent_background)
+    palette = (cS, cI, cR)
+
+    # img[c, r] is the color at position (x = col, y = row).
+    img = Matrix{RGBAf}(undef, width, height)
+    @inbounds for idx in 1:lattice.n_nodes
+        r, c = index_to_coord(lattice, idx)
+        img[c, r] = palette[Int(states_raw[idx]) + 1]
+    end
+
+    image!(ax, (0.5, width + 0.5), (0.5, height + 0.5), img; interpolate = false)
+
+    if viz.show_boundary && has_boundary(lattice)
+        _draw_boundary_box!(ax, 0.5, width + 0.5, 0.5, height + 0.5)
+    end
+    return ax
+end
+
+# Triangular / hexagonal: draw the dual cells as polygons.
+function _draw_lattice!(ax, viz::LatticeVisualizer, lattice::AbstractLatticeGraph,
+                        states_raw::Vector{Int8}; transparent_background::Bool = false)
+    cells = cell_polygons(lattice)
+    colors = _node_colors(viz.color_scheme, states_raw;
+                          transparent_background = transparent_background)
+
+    polys = [Point2f.(eachcol(c)) for c in cells]
+    strokewidth = viz.show_grid ? 0.5 : 0.0
+    poly!(ax, polys; color = colors, strokewidth = strokewidth, strokecolor = (:gray, 0.5))
+
+    if viz.show_boundary
+        pos = node_positions(lattice)
+        xmin, xmax = extrema(@view pos[1, :])
+        ymin, ymax = extrema(@view pos[2, :])
+        _draw_boundary_box!(ax, xmin - 0.6, xmax + 0.6, ymin - 0.6, ymax + 0.6)
+    end
+    return ax
+end
+
+"""Stroke a rectangle outline (boundary emphasis)."""
+function _draw_boundary_box!(ax, xlo, xhi, ylo, yhi)
+    lines!(ax, [xlo, xhi, xhi, xlo, xlo], [ylo, ylo, yhi, yhi, ylo];
+           color = :black, linewidth = 2)
 end
 
 # =============================================================================
 # Required Interface Implementation
 # =============================================================================
 
-function supported_graph_types(viz::LatticeVisualizer)::Vector{Type}
-    return [SquareLattice]
-end
-
 function visualize_state(viz::LatticeVisualizer, process::AbstractEpidemicProcess;
-                        transparent_background::Bool = false,
-                        trim_plot::Bool = false)
-    # Validate compatibility
+                         transparent_background::Bool = false)
     validate_visualizer_compatibility(viz, process)
-
     graph = get_graph(process)
-
-    return _render_state_matrix(viz, graph, node_states_raw(graph);
-                                title = generate_visualization_title(process),
-                                transparent_background = transparent_background,
-                                trim_plot = trim_plot)
-end
-
-"""
-Render a single lattice state (given as a raw Int8 state vector) to a heatmap plot.
-
-This is the shared rendering core used by both `visualize_state` (live process state)
-and the animation builder (recorded frame snapshots), so animation frames are guaranteed
-to look identical to static snapshots.
-
-# Arguments
-- `viz::LatticeVisualizer`: Visualizer holding color scheme / figure settings
-- `lattice::SquareLattice`: The lattice (for dimensions and boundary)
-- `states_raw::Vector{Int8}`: Node states to draw (0=S, 1=I, 2=R)
-- `title::String`: Plot title (default: empty)
-- `transparent_background::Bool`: Draw susceptible nodes transparent (default: false)
-- `trim_plot::Bool`: Remove title/margins/axes for clean output (default: false)
-
-# Returns
-- Plots.jl plot object
-"""
-function _render_state_matrix(viz::LatticeVisualizer, lattice::SquareLattice,
-                              states_raw::Vector{Int8};
-                              title::String = "",
-                              transparent_background::Bool = false,
-                              trim_plot::Bool = false)
-    width, height = lattice.width, lattice.height
-
-    # Convert linear state array to 2D matrix for heatmap
-    state_matrix = _states_to_matrix(states_raw, height, width)
-
-    # Get colors from scheme
-    colors = COLOR_SCHEMES[viz.color_scheme]
-
-    # Convert to Float64 for heatmap
-    numeric_matrix = Float64.(state_matrix)
-    if transparent_background
-        color_list = [colors[:background], colors[:infected], colors[:removed]]
-    else
-        color_list = [colors[:susceptible], colors[:infected], colors[:removed]]
-    end
-
-    p = heatmap(numeric_matrix,
-               title = title,
-               size = viz.figure_size,
-               aspect_ratio = :equal,
-               showaxis = false,
-               grid = viz.show_grid,
-               colorbar = false,
-               c = color_list,
-               clims = (0, 2),
-               xlims = (0.5, width + 0.5),
-               ylims = (0.5, height + 0.5))
-
-    # Add boundary highlighting if requested
-    if viz.show_boundary && has_boundary(lattice)
-        _add_boundary_overlay!(p, lattice, viz)
-    end
-
-    # Remove title and minimize margins if trimming
-    if trim_plot
-        plot!(p,
-            title = "",              # Remove title
-            margin = 0Plots.mm,      # Remove all margins
-            left_margin = 0Plots.mm,  # Explicitly remove left margin
-            right_margin = 0Plots.mm, # Explicitly remove right margin
-            top_margin = 0Plots.mm,   # Explicitly remove top margin
-            bottom_margin = 0Plots.mm, # Explicitly remove bottom margin
-            framestyle = :none,      # Remove frame/axes completely
-            showaxis = false,        # Ensure axes are hidden
-            grid = false,            # Ensure grid is off
-            axis = nothing,          # Remove axis completely
-            ticks = nothing)         # Remove ticks
-    end
-
-    return p
+    return render_frame(viz, graph, node_states_raw(graph);
+                        title = generate_visualization_title(process),
+                        transparent_background = transparent_background)
 end
 
 # =============================================================================
-# Optional Interface Implementation  
+# Optional Interface Implementation
 # =============================================================================
 
 function get_visualization_settings(viz::LatticeVisualizer)::Dict{Symbol, Any}
@@ -161,9 +180,8 @@ end
 function set_visualization_settings!(viz::LatticeVisualizer, settings::Dict{Symbol, Any})
     for (key, value) in settings
         if key == :color_scheme
-            if value ∉ available_color_schemes()
+            value ∈ available_color_schemes() ||
                 throw(ArgumentError("Unknown color scheme: $value"))
-            end
             viz.color_scheme = value
         elseif key == :show_boundary
             viz.show_boundary = value
@@ -178,146 +196,32 @@ function set_visualization_settings!(viz::LatticeVisualizer, settings::Dict{Symb
 end
 
 # =============================================================================
-# Internal Helper Functions
-# =============================================================================
-
-"""
-Convert linear state array to 2D matrix for heatmap visualization.
-
-The state array uses column-major indexing (as in our lattice implementation),
-so we need to reshape and transpose appropriately.
-"""
-function _states_to_matrix(states_raw::Vector{Int8}, height::Int, width::Int)::Matrix{Int8}
-    # Reshape from column-major linear array to 2D matrix
-    # lattice uses: index = col + (row-1)*height
-    state_matrix = reshape(states_raw, height, width)
-    
-    # Transpose so that matrix[row, col] corresponds to lattice position (row, col)
-    return transpose(state_matrix)
-end
-
-"""
-Add boundary highlighting overlay to the plot.
-
-Draws a border around the lattice to emphasize boundary conditions.
-"""
-function _add_boundary_overlay!(p, lattice::SquareLattice, viz::LatticeVisualizer)
-    # Only add boundary for absorbing lattices
-    if lattice.boundary != ABSORBING
-        return
-    end
-    
-    width, height = lattice.width, lattice.height
-    
-    # Add boundary rectangle
-    plot!(p, 
-          [0.5, width + 0.5, width + 0.5, 0.5, 0.5],
-          [0.5, 0.5, height + 0.5, height + 0.5, 0.5],
-          line = (3, :black, 0.8),
-          fill = false,
-          label = "")
-end
-
-# =============================================================================
 # Convenience Functions
 # =============================================================================
 
 """
-Create a comparison plot showing multiple lattice states side by side.
-
-# Arguments
-- `processes::Vector{AbstractEpidemicProcess}`: Processes to compare
-- `titles::Vector{String}`: Titles for each subplot (optional)
-- `color_scheme::Symbol`: Color scheme to use (default: :zim)
-
-# Returns
-- Plots.jl plot object with subplots
-
-# Example  
-```julia
-julia> processes = [zim1, zim2, zim3]
-julia> titles = ["λ=1.5", "λ=2.0", "λ=2.5"]  
-julia> p = plot_lattice_comparison(processes, titles)
-```
-"""
-function plot_lattice_comparison(processes::Vector{<:AbstractEpidemicProcess},
-                                titles::Vector{String} = String[],
-                                color_scheme::Symbol = :zim)
-    
-    n_plots = length(processes)
-    if isempty(titles)
-        titles = ["Process $i" for i in 1:n_plots]
-    elseif length(titles) != n_plots
-        throw(ArgumentError("Number of titles must match number of processes"))
-    end
-    
-    # Create individual plots
-    viz = LatticeVisualizer(color_scheme=color_scheme, figure_size=(300, 300))
-    plots = []
-    
-    for (i, process) in enumerate(processes)
-        # Validate each process
-        validate_visualizer_compatibility(viz, process)
-        
-        p = visualize_state(viz, process)
-        plot!(p, title=titles[i])
-        push!(plots, p)
-    end
-    
-    # Combine into layout
-    layout = if n_plots <= 3
-        (1, n_plots)  # Single row
-    else
-        # Multiple rows, try to make roughly square
-        rows = Int(ceil(sqrt(n_plots)))
-        cols = Int(ceil(n_plots / rows))
-        (rows, cols)
-    end
-    
-    return plot(plots..., layout=layout, size=(300 * layout[2], 300 * layout[1]))
-end
-
-"""
-Save lattice visualization to file with advanced formatting options.
+Save a lattice visualization to file (format from the extension).
 
 # Arguments
 - `process::AbstractEpidemicProcess`: Process to visualize
-- `filename::String`: Output filename (extension determines format)
-- `color_scheme::Symbol`: Color scheme to use (default: :zim)
+- `filename::String`: Output path (`.png`, `.pdf`, `.svg`)
+- `color_scheme::Symbol`: Color scheme (default: `:zim`)
 - `figure_size::Tuple{Int, Int}`: Plot dimensions in pixels (default: (800, 800))
-- `dpi::Int`: Resolution for raster formats (default: 300)
-- `transparent_background::Bool`: Make background transparent (default: false)
-- `trim_plot::Bool`: Remove title and margins for clean output (default: false)
-
-# Examples
-```julia
-# Basic usage
-julia> save_lattice_plot(zim, "simulation_result.pdf")
-
-# High-resolution with custom size
-julia> save_lattice_plot(zim, "large_sim.png", figure_size=(1200, 1200), dpi=600)
-
-# Trimmed plot for LaTeX figures
-julia> save_lattice_plot(zim, "paper_figure.pdf", trim_plot=true)
-
-# Transparent overlay
-julia> save_lattice_plot(zim, "overlay.png", transparent_background=true, trim_plot=true)
-```
+- `transparent_background::Bool`: Transparent background + susceptible cells (default: false)
+- `show_boundary::Bool`: Outline the lattice boundary (default: false)
 """
 function save_lattice_plot(process::AbstractEpidemicProcess, filename::String;
-                          color_scheme::Symbol = :zim, 
+                          color_scheme::Symbol = :zim,
                           figure_size::Tuple{Int, Int} = (800, 800),
-                          dpi::Int = 300,
                           transparent_background::Bool = false,
-                          trim_plot::Bool = false,
-                          show_boundary::Bool = false)
-    
-    viz = LatticeVisualizer(color_scheme=color_scheme, 
-                           figure_size=figure_size,
-                           show_boundary=show_boundary)
-    p = visualize_state(viz, process, transparent_background=transparent_background, trim_plot=trim_plot)
-    
-    savefig(p, filename)
-    
+                          show_boundary::Bool = false,
+                          show_grid::Bool = false)
+    viz = LatticeVisualizer(color_scheme = color_scheme,
+                            figure_size = figure_size,
+                            show_boundary = show_boundary,
+                            show_grid = show_grid)
+    fig = visualize_state(viz, process; transparent_background = transparent_background)
+    save(filename, fig)
     println("Lattice visualization saved to: $filename")
+    return fig
 end
