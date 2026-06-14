@@ -172,28 +172,31 @@ end
 # =============================================================================
 
 """
-Validate adjacency list structure and detect common errors.
+Validate adjacency list structure and detect common errors (bounds, self-loops,
+duplicate neighbors) in a single allocation-free pass.
+
+Duplicates are found with the "last seen" timestamp trick: `last_seen[nb]` records
+the node whose neighbor list `nb` was most recently seen in, so a repeat within the
+same list is a duplicate. Using `node_id` as the timestamp means the scratch buffer
+never needs clearing between nodes — the whole check costs one `Vector{Int}` of
+length `n` and is O(total degree).
 """
 function _validate_adjacency_list(adjacency_list::Vector{Vector{Int}})
     n = length(adjacency_list)
-    
+    last_seen = zeros(Int, n)
+
     for (node_id, neighbors) in enumerate(adjacency_list)
         for neighbor in neighbors
-            # Check bounds
             if neighbor < 1 || neighbor > n
                 throw(ArgumentError("Invalid neighbor $neighbor for node $node_id (must be in [1, $n])"))
             end
-            
-            # Check for self-loops
             if neighbor == node_id
                 throw(ArgumentError("Self-loop detected: node $node_id lists itself as neighbor"))
             end
-        end
-        
-        # Check for duplicates
-        if length(neighbors) != length(unique(neighbors))
-            duplicates = [x for x in neighbors if count(==(x), neighbors) > 1]
-            throw(ArgumentError("Duplicate neighbors detected for node $node_id: $duplicates"))
+            if last_seen[neighbor] == node_id
+                throw(ArgumentError("Duplicate neighbor $neighbor detected for node $node_id"))
+            end
+            last_seen[neighbor] = node_id
         end
     end
 end
