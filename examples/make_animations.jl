@@ -119,7 +119,7 @@ animate_model("SIR (hexagonal)",
 
 # 7. SIR on a general graph (Erdős–Rényi) — node-link diagram, spring layout.
 animate_model("SIR (network)",
-    sir_builder(() -> create_random_graph(80, 0.06, Random.MersenneTwister(SEED)),
+    sir_builder(() -> create_gnp(80, 0.06; rng = Random.MersenneTwister(SEED)),
                 g -> [argmax([length(get_neighbors(g, i)) for i in 1:num_nodes(g)])]);
     color_scheme = :sir, filename = "sir_network.gif")
 

@@ -417,50 +417,8 @@ function create_star_graph(n::Int)::AdjacencyGraph
     return AdjacencyGraph(adjacency_list)
 end
 
-"""
-Create random Erdős-Rényi graph.
-
-# Arguments
-- `n::Int`: Number of nodes
-- `p::Float64`: Probability of edge between any two nodes
-- `rng::AbstractRNG`: Random number generator
-
-# Returns
-- `AdjacencyGraph`: Random graph
-
-# Example
-```julia
-julia> random_graph = create_random_graph(100, 0.1)  # 100 nodes, 10% edge probability
-```
-"""
-function create_random_graph(n::Int, p::Float64, 
-                            rng::AbstractRNG = Random.default_rng())::AdjacencyGraph
-    if n < 1
-        throw(ArgumentError("Number of nodes must be positive"))
-    end
-    if p < 0 || p > 1
-        throw(ArgumentError("Edge probability must be in [0, 1]"))
-    end
-    
-    adjacency_list = [Int[] for _ in 1:n]
-    
-    # Add edges with probability p
-    for i in 1:n
-        for j in (i+1):n  # Only check upper triangle to avoid duplicates
-            if rand(rng) < p
-                push!(adjacency_list[i], j)
-                push!(adjacency_list[j], i)
-            end
-        end
-    end
-    
-    # Sort neighbor lists
-    for neighbors in adjacency_list
-        sort!(neighbors)
-    end
-    
-    return AdjacencyGraph(adjacency_list)
-end
+# Erdős–Rényi random graphs live in their own type/file (graphs/erdos_renyi.jl):
+# create_erdos_renyi / create_gnp / create_gnm return an ErdosRenyiGraph.
 
 # =============================================================================
 # Graph Analysis Utilities
