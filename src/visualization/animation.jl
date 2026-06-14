@@ -321,8 +321,9 @@ function animate_recording(rec::SimulationRecording;
         viz.show_grid = show_grid
     end
 
-    # A general graph gets a single fixed layout so nodes don't move between frames.
-    positions = graph isa AdjacencyGraph ? _resolve_positions(graph) :
+    # A general (node-link) graph gets a single fixed layout so nodes don't move
+    # between frames; lattices use their intrinsic node positions.
+    positions = viz isa NetworkVisualizer ? _resolve_positions(graph) :
                 node_positions(graph)
     xlo, xhi, ylo, yhi = _frame_limits(positions)
 
@@ -332,7 +333,7 @@ function animate_recording(rec::SimulationRecording;
     hidespines!(ax)
     limits!(ax, xlo, xhi, ylo, yhi)
 
-    layout_pos = graph isa AdjacencyGraph ? positions : nothing
+    layout_pos = viz isa NetworkVisualizer ? positions : nothing
     n = num_frames(rec)
     record(fig, filename, 1:n; framerate = fps) do idx
         empty!(ax)
