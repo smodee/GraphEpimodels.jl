@@ -36,7 +36,7 @@ infected nodes for O(1)-per-step recovery sampling.
 - `steps::Int`: Number of steps executed
 - `rng::AbstractRNG`: Random number generator
 """
-mutable struct SIRProcess <: SIRLikeProcess
+mutable struct SIRProcess{R<:AbstractRNG} <: SIRLikeProcess
     graph::AbstractEpidemicGraph
     β::Float64
     γ::Float64
@@ -44,12 +44,15 @@ mutable struct SIRProcess <: SIRLikeProcess
     infected_nodes::Set{Int}
     time::Float64
     steps::Int
-    rng::AbstractRNG
+    # Parametric on the concrete RNG type: an abstract `rng::AbstractRNG` field
+    # would make every rand()/randexp() in step! a dynamic dispatch that boxes
+    # its result (~16 bytes/call), adding per-step GC pressure (cf. issues #1/#3).
+    rng::R
 
     function SIRProcess(graph::AbstractEpidemicGraph, β::Float64, γ::Float64;
-                        rng::AbstractRNG = Random.default_rng())
+                        rng::R = Random.default_rng()) where {R<:AbstractRNG}
         _validate_sir_parameters(β, γ)
-        new(graph, β, γ, DictActiveTracker(), Set{Int}(), 0.0, 0, rng)
+        new{R}(graph, β, γ, DictActiveTracker(), Set{Int}(), 0.0, 0, rng)
     end
 end
 
@@ -291,7 +294,7 @@ julia> results = run_simulation(sir; max_time=100.0)
 """
 function create_sir_simulation(graph::AbstractEpidemicGraph, β::Float64, γ::Float64 = 1.0;
                                initial_infected::Union{Symbol, Vector{Int}} = :center,
-                               rng_seed::Union{Int, Nothing} = nothing)::SIRProcess
+                               rng_seed::Union{Int, Nothing} = nothing)
     rng = create_rng(rng_seed)
     process = SIRProcess(graph, β, γ; rng=rng)
 
@@ -317,7 +320,7 @@ Convenience function for creating SIR on square lattices.
 function create_sir_simulation(width::Int, height::Int, β::Float64, γ::Float64 = 1.0;
                                boundary::Symbol = :absorbing,
                                initial_infected::Union{Symbol, Vector{Int}} = :center,
-                               rng_seed::Union{Int, Nothing} = nothing)::SIRProcess
+                               rng_seed::Union{Int, Nothing} = nothing)
     lattice = create_square_lattice(width, height, boundary)
     return create_sir_simulation(lattice, β, γ; initial_infected=initial_infected, rng_seed=rng_seed)
 end

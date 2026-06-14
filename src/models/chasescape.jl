@@ -58,7 +58,7 @@ to the approach in ZIM, SIR and Maki-Thompson.
 - `steps::Int`: Number of steps executed
 - `rng::AbstractRNG`: Random number generator
 """
-mutable struct ChaseEscapeProcess <: SIRLikeProcess
+mutable struct ChaseEscapeProcess{R<:AbstractRNG} <: SIRLikeProcess
     graph::AbstractEpidemicGraph
     λ::Float64
     μ::Float64
@@ -67,13 +67,15 @@ mutable struct ChaseEscapeProcess <: SIRLikeProcess
     catch_tracker::DictActiveTracker
     time::Float64
     steps::Int
-    rng::AbstractRNG
+    # Parametric on the concrete RNG type to keep rand()/randexp() statically
+    # dispatched and allocation-free in the hot path (see issues #1/#3).
+    rng::R
 
     function ChaseEscapeProcess(graph::AbstractEpidemicGraph, λ::Float64, μ::Float64;
                                 ghost::Bool = true,
-                                rng::AbstractRNG = Random.default_rng())
+                                rng::R = Random.default_rng()) where {R<:AbstractRNG}
         _validate_chase_escape_parameters(λ, μ)
-        new(graph, λ, μ, ghost,
+        new{R}(graph, λ, μ, ghost,
             DictActiveTracker(), DictActiveTracker(),
             0.0, 0, rng)
     end
@@ -358,7 +360,7 @@ function create_chase_escape_simulation(graph::AbstractEpidemicGraph,
                                         ghost::Bool = true,
                                         initial_red::Union{Symbol, Vector{Int}} = :center,
                                         initial_blue::Vector{Int} = Int[],
-                                        rng_seed::Union{Int, Nothing} = nothing)::ChaseEscapeProcess
+                                        rng_seed::Union{Int, Nothing} = nothing)
     rng     = create_rng(rng_seed)
     process = ChaseEscapeProcess(graph, λ, μ; ghost = ghost, rng = rng)
 
@@ -387,7 +389,7 @@ function create_chase_escape_simulation(width::Int, height::Int,
                                         boundary::Symbol = :absorbing,
                                         initial_red::Union{Symbol, Vector{Int}} = :center,
                                         initial_blue::Vector{Int} = Int[],
-                                        rng_seed::Union{Int, Nothing} = nothing)::ChaseEscapeProcess
+                                        rng_seed::Union{Int, Nothing} = nothing)
     lattice = create_square_lattice(width, height, boundary)
     return create_chase_escape_simulation(lattice, λ, μ;
                                           ghost        = ghost,

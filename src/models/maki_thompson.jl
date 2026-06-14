@@ -50,7 +50,7 @@ identical to the approach in ZIM and SIR.
 - `steps::Int`: Number of steps executed
 - `rng::AbstractRNG`: Random number generator
 """
-mutable struct MakiThompsonProcess <: SIRLikeProcess
+mutable struct MakiThompsonProcess{R<:AbstractRNG} <: SIRLikeProcess
     graph::AbstractEpidemicGraph
     α::Float64
     β::Float64
@@ -60,14 +60,16 @@ mutable struct MakiThompsonProcess <: SIRLikeProcess
     spreaders::Set{Int}
     time::Float64
     steps::Int
-    rng::AbstractRNG
+    # Parametric on the concrete RNG type to keep rand()/randexp() statically
+    # dispatched and allocation-free in the hot path (see issues #1/#3).
+    rng::R
 
     function MakiThompsonProcess(graph::AbstractEpidemicGraph,
                                   α::Float64, β::Float64,
                                   stifler_contact::Bool;
-                                  rng::AbstractRNG = Random.default_rng())
+                                  rng::R = Random.default_rng()) where {R<:AbstractRNG}
         _validate_mt_parameters(α, β)
-        new(graph, α, β, stifler_contact,
+        new{R}(graph, α, β, stifler_contact,
             DictActiveTracker(), DictActiveTracker(),
             Set{Int}(), 0.0, 0, rng)
     end
@@ -342,7 +344,7 @@ function create_maki_thompson_simulation(graph::AbstractEpidemicGraph,
                                           α::Float64, β::Float64 = 1.0;
                                           stifler_contact::Bool = true,
                                           initial_infected::Union{Symbol, Vector{Int}} = :center,
-                                          rng_seed::Union{Int, Nothing} = nothing)::MakiThompsonProcess
+                                          rng_seed::Union{Int, Nothing} = nothing)
     rng     = create_rng(rng_seed)
     process = MakiThompsonProcess(graph, α, β, stifler_contact; rng = rng)
 
@@ -370,7 +372,7 @@ function create_maki_thompson_simulation(width::Int, height::Int,
                                           stifler_contact::Bool = true,
                                           boundary::Symbol = :absorbing,
                                           initial_infected::Union{Symbol, Vector{Int}} = :center,
-                                          rng_seed::Union{Int, Nothing} = nothing)::MakiThompsonProcess
+                                          rng_seed::Union{Int, Nothing} = nothing)
     lattice = create_square_lattice(width, height, boundary)
     return create_maki_thompson_simulation(lattice, α, β;
                                            stifler_contact   = stifler_contact,

@@ -35,7 +35,7 @@ large-scale simulations on lattices and general graphs.
 - `steps::Int`: Number of steps executed
 - `rng::AbstractRNG`: Random number generator
 """
-mutable struct ZIMProcess <: SIRLikeProcess
+mutable struct ZIMProcess{R<:AbstractRNG} <: SIRLikeProcess
     graph::AbstractEpidemicGraph
     λ::Float64
     μ::Float64
@@ -43,17 +43,33 @@ mutable struct ZIMProcess <: SIRLikeProcess
     active_tracker::DictActiveTracker
     time::Float64
     steps::Int
-    rng::AbstractRNG
-    
+    # Parametric on the concrete RNG type: an abstract `rng::AbstractRNG` field
+    # would make every rand()/randexp() in step! a dynamic dispatch that boxes
+    # its result (~16 bytes/call), adding per-step GC pressure (cf. issues #1/#3).
+    rng::R
+    # Reusable scratch buffers for the per-step event handlers, so that stepping
+    # allocates nothing on the hot path (see issues #1 / #3). neighbor_buf backs
+    # get_neighbors! calls; susceptible_buf collects susceptible neighbors when
+    # choosing an infection target. Each process is used by one thread at a time,
+    # so reuse is safe without locking.
+    neighbor_buf::Vector{Int}
+    susceptible_buf::Vector{Int}
+
     function ZIMProcess(graph::AbstractEpidemicGraph, λ::Float64, μ::Float64 = 1.0;
-                       rng::AbstractRNG = Random.default_rng())
-        
+                       rng::R = Random.default_rng()) where {R<:AbstractRNG}
+
         _validate_zim_parameters(λ, μ)
-        
+
         infection_prob = λ / (λ + μ)
         active_tracker = DictActiveTracker()
-        
-        new(graph, λ, μ, infection_prob, active_tracker, 0.0, 0, rng)
+
+        neighbor_buf = Int[]
+        susceptible_buf = Int[]
+        sizehint!(neighbor_buf, 8)
+        sizehint!(susceptible_buf, 8)
+
+        new{R}(graph, λ, μ, infection_prob, active_tracker, 0.0, 0, rng,
+            neighbor_buf, susceptible_buf)
     end
 end
 
@@ -173,27 +189,29 @@ This is the performance-critical function that implements your original algorith
 with efficient active node tracking updates.
 """
 function _zombie_wins!(process::ZIMProcess, zombie_node::Int)
-    # Get susceptible neighbors of the attacking zombie
-    neighbors = get_neighbors(process.graph, zombie_node)
+    # Get susceptible neighbors of the attacking zombie (neighbor_buf reused;
+    # may alias an internal list for non-lattice graphs, so treat it read-only).
+    neighbors = get_neighbors!(process.neighbor_buf, process.graph, zombie_node)
     states = node_states_raw(process.graph)
     susceptible_state = state_to_int(SUSCEPTIBLE)
     infected_state = state_to_int(INFECTED)
-    
-    # Find susceptible neighbors
-    susceptible_neighbors = Int[]
+
+    # Collect susceptible neighbors into the reused buffer (no allocation).
+    susceptible_neighbors = process.susceptible_buf
+    empty!(susceptible_neighbors)
     for neighbor in neighbors
         if states[neighbor] == susceptible_state
             push!(susceptible_neighbors, neighbor)
         end
     end
-    
+
     if isempty(susceptible_neighbors)
         # This shouldn't happen if active tracking is correct
         @warn "Zombie $zombie_node has no susceptible neighbors but is marked active"
         remove_active_node!(process.active_tracker, zombie_node)
         return
     end
-    
+
     # Randomly select a susceptible neighbor to infect
     target = rand(process.rng, susceptible_neighbors)
     states[target] = infected_state
@@ -232,7 +250,7 @@ function _update_active_tracking_after_infection!(process::ZIMProcess, attacking
     update_active_node!(process.active_tracker, attacking_zombie, current_count - 1)
     
     # 3. Update all zombie neighbors of the new zombie (they each lost a susceptible neighbor)
-    new_zombie_neighbors = get_neighbors(process.graph, new_zombie)
+    new_zombie_neighbors = get_neighbors!(process.neighbor_buf, process.graph, new_zombie)
     states = node_states_raw(process.graph)
     infected_state = state_to_int(INFECTED)
     
@@ -252,7 +270,7 @@ Update active tracking after a zombie death.
 """
 function _update_neighbors_after_zombie_death!(process::ZIMProcess, dead_zombie::Int)
     # Find all zombie neighbors of the dead zombie - they gain a susceptible "slot"
-    zombie_neighbors = get_neighbors(process.graph, dead_zombie)
+    zombie_neighbors = get_neighbors!(process.neighbor_buf, process.graph, dead_zombie)
     states = node_states_raw(process.graph)
     infected_state = state_to_int(INFECTED)
     
@@ -332,7 +350,7 @@ julia> results = run_simulation(zim; max_time=100.0, stop_on_escape=true)
 """
 function create_zim_simulation(graph::AbstractEpidemicGraph, λ::Float64, μ::Float64 = 1.0;
                               initial_infected::Union{Symbol, Vector{Int}} = :center,
-                              rng_seed::Union{Int, Nothing} = nothing)::ZIMProcess
+                              rng_seed::Union{Int, Nothing} = nothing)
     
     # Create RNG using utils.jl function
     rng = create_rng(rng_seed)
@@ -365,7 +383,7 @@ Convenience function for creating ZIM on square lattices (backward compatibility
 function create_zim_simulation(width::Int, height::Int, λ::Float64, μ::Float64 = 1.0;
                               boundary::Symbol = :absorbing,
                               initial_infected::Union{Symbol, Vector{Int}} = :center,
-                              rng_seed::Union{Int, Nothing} = nothing)::ZIMProcess
+                              rng_seed::Union{Int, Nothing} = nothing)
     
     lattice = create_square_lattice(width, height, boundary)
     return create_zim_simulation(lattice, λ, μ; initial_infected=initial_infected, rng_seed=rng_seed)

@@ -52,9 +52,13 @@ Create a reproducible random number generator.
 - `seed::Union{Int, Nothing}`: Random seed (nothing for non-reproducible)
 
 # Returns
-- `AbstractRNG`: Random number generator
+- `Random.Xoshiro`: Concrete high-performance RNG
+
+The concrete return type matters: an `::AbstractRNG` annotation here would make
+the inferred return abstract, which propagates into the process constructors and
+reintroduces the per-step rand() boxing the RNG type parameter is meant to avoid.
 """
-function create_rng(seed::Union{Int, Nothing} = nothing)::AbstractRNG
+function create_rng(seed::Union{Int, Nothing} = nothing)
     if seed === nothing
         return Random.Xoshiro()
     else
