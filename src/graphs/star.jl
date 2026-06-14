@@ -1,0 +1,168 @@
+"""
+Star graph implementation for epidemic modeling.
+
+A *star graph* `S_n` has one central node (node 1) connected to every other node,
+and the `n-1` leaves connected only to the center. Its connectivity is fully
+determined by `n`, so it is an [`AbstractImplicitGraph`](@ref): neighbors are
+computed on demand rather than stored. The center has degree `n-1`; every leaf has
+degree 1.
+
+Like the complete graph, the center neighbors every other node, so the center's
+neighbor-by-state count is the global state count minus the center itself — an
+allocation-free scan with no adjacency list (see `count_neighbors_by_state`).
+"""
+
+using Random
+
+# =============================================================================
+# Star Graph
+# =============================================================================
+
+"""
+Star graph `S_n`: central node 1 connected to all others; leaves connect only to
+the center.
+
+Stores only the node count and the primitive `Int8` state vector; neighbors are
+computed on demand.
+
+# Fields
+- `n_nodes::Int`: Number of nodes (1 center + `n-1` leaves)
+- `states::Vector{Int8}`: Node states (primitive array)
+"""
+mutable struct StarGraph <: AbstractImplicitGraph
+    n_nodes::Int
+    states::Vector{Int8}
+
+    function StarGraph(n::Int)
+        if n < 2
+            throw(ArgumentError("Star graph needs at least 2 nodes"))
+        end
+        new(n, zeros(Int8, n))  # All start SUSCEPTIBLE
+    end
+end
+
+# =============================================================================
+# Core Interface Implementation (Required Methods)
+# =============================================================================
+
+@inline function num_nodes(graph::StarGraph)::Int
+    return graph.n_nodes
+end
+
+function node_states_raw(graph::StarGraph)::Vector{Int8}
+    return graph.states
+end
+
+function set_node_states_raw!(graph::StarGraph, states::Vector{Int8})
+    if length(states) != num_nodes(graph)
+        throw(ArgumentError("Expected $(num_nodes(graph)) states, got $(length(states))"))
+    end
+    graph.states = states
+end
+
+function get_neighbors(graph::StarGraph, node_id::Int)::Vector{Int}
+    return get_neighbors!(Int[], graph, node_id)
+end
+
+function get_neighbors!(neighbors::Vector{Int}, graph::StarGraph, node_id::Int)::Vector{Int}
+    n = graph.n_nodes
+    if node_id < 1 || node_id > n
+        throw(BoundsError("Node ID $node_id out of range [1, $n]"))
+    end
+    empty!(neighbors)
+    if node_id == 1
+        # Center: every leaf (nodes 2..n).
+        sizehint!(neighbors, n - 1)
+        @inbounds for j in 2:n
+            push!(neighbors, j)
+        end
+    else
+        # Leaf: only the center.
+        push!(neighbors, 1)
+    end
+    return neighbors
+end
+
+# Degree: n-1 at the center (node 1), 1 at every leaf.
+@inline function get_node_degree(graph::StarGraph, node_id::Int)::Int
+    n = graph.n_nodes
+    if node_id < 1 || node_id > n
+        throw(BoundsError("Node ID $node_id out of range [1, $n]"))
+    end
+    return node_id == 1 ? n - 1 : 1
+end
+
+# =============================================================================
+# Performance-Optimized Neighbor Counting
+# =============================================================================
+
+"""
+Allocation-free neighbor counting for a star.
+
+- A leaf has the single neighbor `1` (the center), so the count is whether the
+  center is in `target_state`.
+- The center neighbors every leaf, so the count is the global number of nodes in
+  `target_state`, minus the center itself if it is in that state.
+"""
+function count_neighbors_by_state(graph::StarGraph, node_id::Int,
+                                  target_state::NodeState)::Int
+    n = graph.n_nodes
+    if node_id < 1 || node_id > n
+        throw(BoundsError("Node ID $node_id out of range [1, $n]"))
+    end
+    states = graph.states
+    target_int = state_to_int(target_state)
+    if node_id != 1
+        @inbounds return states[1] == target_int ? 1 : 0
+    end
+    # Center: all leaves = every node except the center.
+    total = count(==(target_int), states)
+    @inbounds return total - (states[1] == target_int ? 1 : 0)
+end
+
+# =============================================================================
+# Geometry Interface (for visualization)
+# =============================================================================
+#
+# The center sits at the origin and the leaves are spread evenly on the unit
+# circle around it. It is not a space-filling tiling, so it supplies no cells.
+
+has_layout(::StarGraph)::Bool = true
+layout_dim(::StarGraph)::Int = 2
+
+function node_positions(graph::StarGraph)::Matrix{Float64}
+    n = graph.n_nodes
+    pos = Matrix{Float64}(undef, 2, n)
+    @inbounds begin
+        pos[1, 1] = 0.0
+        pos[2, 1] = 0.0
+        for idx in 2:n
+            θ = 2π * (idx - 2) / (n - 1)
+            pos[1, idx] = cos(θ)
+            pos[2, idx] = sin(θ)
+        end
+    end
+    return pos
+end
+
+# =============================================================================
+# Factory Function
+# =============================================================================
+
+"""
+Create star graph (one central node connected to all others).
+
+# Arguments
+- `n::Int`: Total number of nodes (node 1 is the center)
+
+# Returns
+- `StarGraph`: Star graph `S_n`
+
+# Example
+```julia
+julia> star = create_star_graph(6)  # 1 center + 5 leaves
+```
+"""
+function create_star_graph(n::Int)::StarGraph
+    return StarGraph(n)
+end

@@ -287,111 +287,12 @@ function create_graph_from_edges(n_nodes::Int, edges::Vector{Tuple{Int, Int}};
     return AdjacencyGraph(adjacency_list; coords = coords)
 end
 
-# `create_complete_graph` lives in `complete.jl`: the complete graph has a
-# dedicated implicit type (`CompleteGraph`) that stores only `n`, rather than a
-# materialized O(n²) adjacency list.
-
-"""
-Create path graph (nodes connected in a line: 1-2-3-...-n).
-
-# Arguments
-- `n::Int`: Number of nodes
-
-# Returns
-- `AdjacencyGraph`: Path graph
-
-# Example
-```julia
-julia> path = create_path_graph(100)  # Linear chain
-```
-"""
-function create_path_graph(n::Int)::AdjacencyGraph
-    if n < 1
-        throw(ArgumentError("Number of nodes must be positive"))
-    end
-    
-    adjacency_list = Vector{Vector{Int}}(undef, n)
-    
-    for i in 1:n
-        neighbors = Int[]
-        if i > 1
-            push!(neighbors, i-1)
-        end
-        if i < n
-            push!(neighbors, i+1)
-        end
-        adjacency_list[i] = neighbors
-    end
-    
-    return AdjacencyGraph(adjacency_list)
-end
-
-"""
-Create cycle graph (path with ends connected: 1-2-3-...-n-1).
-
-# Arguments
-- `n::Int`: Number of nodes
-
-# Returns
-- `AdjacencyGraph`: Cycle graph
-
-# Example
-```julia
-julia> cycle = create_cycle_graph(10)  # 10-node ring
-```
-"""
-function create_cycle_graph(n::Int)::AdjacencyGraph
-    if n < 3
-        throw(ArgumentError("Cycle graph needs at least 3 nodes"))
-    end
-    
-    adjacency_list = Vector{Vector{Int}}(undef, n)
-    
-    for i in 1:n
-        neighbors = Int[]
-        # Previous node (with wraparound)
-        prev = i == 1 ? n : i - 1
-        push!(neighbors, prev)
-        # Next node (with wraparound)
-        next = i == n ? 1 : i + 1
-        push!(neighbors, next)
-        adjacency_list[i] = neighbors
-    end
-    
-    return AdjacencyGraph(adjacency_list)
-end
-
-"""
-Create star graph (one central node connected to all others).
-
-# Arguments
-- `n::Int`: Total number of nodes
-
-# Returns  
-- `AdjacencyGraph`: Star graph (node 1 is the center)
-
-# Example
-```julia
-julia> star = create_star_graph(6)  # 1 center + 5 leaves
-```
-"""
-function create_star_graph(n::Int)::AdjacencyGraph
-    if n < 2
-        throw(ArgumentError("Star graph needs at least 2 nodes"))
-    end
-    
-    adjacency_list = Vector{Vector{Int}}(undef, n)
-    
-    # Center node (node 1) connects to all others
-    adjacency_list[1] = collect(2:n)
-    
-    # All other nodes connect only to center
-    for i in 2:n
-        adjacency_list[i] = [1]
-    end
-    
-    return AdjacencyGraph(adjacency_list)
-end
+# The named structured graphs each have a dedicated implicit type that stores only
+# `n` (neighbors computed on demand), rather than a materialized adjacency list:
+#   create_complete_graph -> CompleteGraph (graphs/complete.jl)
+#   create_path_graph      -> PathGraph     (graphs/path.jl)
+#   create_cycle_graph     -> CycleGraph    (graphs/cycle.jl)
+#   create_star_graph      -> StarGraph     (graphs/star.jl)
 
 # Erdős–Rényi random graphs live in their own type/file (graphs/erdos_renyi.jl):
 # create_erdos_renyi / create_gnp / create_gnm return an ErdosRenyiGraph.

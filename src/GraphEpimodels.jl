@@ -85,16 +85,21 @@ export HexagonalLattice, create_hexagonal_lattice
 include("graphs/adjacency.jl")
 export AdjacencyGraph, set_coords!
 export create_graph_from_matrix, create_graph_from_edges
-export create_path_graph, create_cycle_graph, create_star_graph
 
 # Erdős–Rényi random graph (adjacency-list backed)
 include("graphs/erdos_renyi.jl")
 export ErdosRenyiGraph
 export create_erdos_renyi, create_gnp, create_gnm
 
-# Complete graph (implicit structured graph: stores only n)
+# Structured graphs as implicit types (store only n; neighbors computed on demand)
 include("graphs/complete.jl")
 export CompleteGraph, create_complete_graph
+include("graphs/path.jl")
+export PathGraph, create_path_graph
+include("graphs/cycle.jl")
+export CycleGraph, create_cycle_graph
+include("graphs/star.jl")
+export StarGraph, create_star_graph
 
 # =============================================================================
 # Epidemic Process Framework
