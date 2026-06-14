@@ -157,6 +157,50 @@ end
             @test _stale_count(p) == 0
             @test GraphEpimodels.get_total_boundary(p.active_tracker) ==
                   sum(n -> count_neighbors_by_state(g, n, SUSCEPTIBLE), seeds)
+
+            # The invariant must survive a full run, not just the seeding. ZIM has
+            # a second event type (kill) that SIR lacks, so it needs its own
+            # full-run check; previously only the post-reset state was tested.
+            steps = 0
+            worst = 0
+            while is_active(p) && steps < 200_000
+                step!(p); steps += 1
+                worst = max(worst, _stale_count(p))
+            end
+            @test worst == 0
         end
+    end
+end
+
+# Weighted sampling must not depend on Dict iteration order. The active-node
+# tracker is a Dict, whose iteration order depends on insertion/deletion/rehash
+# history. If sampling walked that order, two trackers with identical contents
+# but different histories (a fresh process vs. one reused across simulations, or
+# per-thread processes that ran different work) would map the same random draw
+# onto different nodes — making results irreproducible between serial and
+# threaded runs. The sampler sorts into a canonical order to prevent this.
+@testset "weighted sampling is independent of Dict insertion order" begin
+    pairs = [(10, 3), (25, 1), (7, 4), (42, 2), (13, 5), (99, 1), (56, 3), (3, 2)]
+
+    t1 = GraphEpimodels.DictActiveTracker()
+    for (nd, w) in pairs
+        GraphEpimodels.add_active_node!(t1, nd, w)
+    end
+
+    # Same contents, but built in reverse order and churned to force a different
+    # internal hash-table layout.
+    t2 = GraphEpimodels.DictActiveTracker()
+    for (nd, w) in reverse(pairs)
+        GraphEpimodels.add_active_node!(t2, nd, w)
+    end
+    GraphEpimodels.add_active_node!(t2, 1000, 9)
+    GraphEpimodels.remove_active_node!(t2, 1000)
+
+    @test t1.active_nodes == t2.active_nodes  # equal contents...
+    n = length(pairs)
+    for seed in 1:100
+        a = GraphEpimodels._weighted_sample_active_fast(t1, n, MersenneTwister(seed))
+        b = GraphEpimodels._weighted_sample_active_fast(t2, n, MersenneTwister(seed))
+        @test a == b  # ...therefore identical selection for the same draw
     end
 end
