@@ -287,36 +287,9 @@ function create_graph_from_edges(n_nodes::Int, edges::Vector{Tuple{Int, Int}};
     return AdjacencyGraph(adjacency_list; coords = coords)
 end
 
-"""
-Create complete graph (all nodes connected to all others).
-
-# Arguments
-- `n::Int`: Number of nodes
-
-# Returns
-- `AdjacencyGraph`: Complete graph
-
-# Example
-```julia
-julia> complete = create_complete_graph(5)  # K_5
-```
-"""
-function create_complete_graph(n::Int)::AdjacencyGraph
-    if n < 1
-        throw(ArgumentError("Number of nodes must be positive"))
-    end
-    if n > 10_000
-        @warn "Creating complete graph with $n nodes ($(n*(n-1)÷2) edges) - this may use significant memory"
-    end
-    
-    adjacency_list = Vector{Vector{Int}}(undef, n)
-    
-    for i in 1:n
-        adjacency_list[i] = [j for j in 1:n if j != i]
-    end
-    
-    return AdjacencyGraph(adjacency_list)
-end
+# `create_complete_graph` lives in `complete.jl`: the complete graph has a
+# dedicated implicit type (`CompleteGraph`) that stores only `n`, rather than a
+# materialized O(n²) adjacency list.
 
 """
 Create path graph (nodes connected in a line: 1-2-3-...-n).

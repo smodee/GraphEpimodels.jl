@@ -42,19 +42,30 @@ This design allows epidemic processes to work with any graph structure
 abstract type AbstractEpidemicGraph end
 
 """
-Abstract base type for regular lattice graphs (square, triangular, hexagonal).
+Abstract base type for *implicit* graphs, whose connectivity is a closed-form
+function of the node index rather than stored data.
 
-Lattice graphs share a key property: their connectivity is *implicit* in a
-regular geometric arrangement, so neighbors are computed by O(1) coordinate
-arithmetic rather than stored as explicit adjacency lists. They also carry an
-intrinsic spatial layout (see the geometry interface below), which the
-visualization layer uses to draw them as dual-tiling cells.
+Implicit graphs compute a node's neighbors by arithmetic on demand and never
+materialize an adjacency list, so their structure costs O(n) memory (just the
+state vector) instead of O(n + m). This is the right category for any graph
+family with a regular, parametrized topology — lattices (square, triangular,
+hexagonal) and structured graphs like the complete graph.
 
-This is a sibling of `AdjacencyGraph` (which stores explicit adjacency lists and
-has no intrinsic geometry), not a supertype of it: lattices deliberately avoid
+This is a sibling of `AdjacencyGraph` (which stores explicit adjacency lists for
+arbitrary topologies), not a supertype of it: implicit graphs deliberately avoid
 materializing adjacency lists.
 """
-abstract type AbstractLatticeGraph <: AbstractEpidemicGraph end
+abstract type AbstractImplicitGraph <: AbstractEpidemicGraph end
+
+"""
+Abstract base type for regular lattice graphs (square, triangular, hexagonal).
+
+Lattices are [`AbstractImplicitGraph`](@ref)s whose implicit structure is a
+*regular geometric arrangement*: neighbors are computed by O(1) coordinate
+arithmetic, and they carry an intrinsic spatial layout (see the geometry
+interface below) that the visualization layer draws as dual-tiling cells.
+"""
+abstract type AbstractLatticeGraph <: AbstractImplicitGraph end
 
 """
 Pre-compute the perimeter node indices of a `width × height` rectangular array.
