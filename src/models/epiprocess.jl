@@ -513,7 +513,9 @@ function _weighted_sample_active_fast(tracker::DictActiveTracker, n_active::Int,
     end
 
     if n_active == 1
-        return first(keys(tracker.active_nodes))
+        # first(d::Dict) returns a Pair{K,V}; .first extracts the key without
+        # allocating a KeySet wrapper (unlike first(keys(d))).
+        return first(tracker.active_nodes).first
     end
 
     # Reuse the tracker's scratch buffers instead of allocating fresh vectors.
@@ -524,8 +526,10 @@ function _weighted_sample_active_fast(tracker::DictActiveTracker, n_active::Int,
 
     # Collect node ids, then sort into a canonical order so sampling does not
     # depend on Dict iteration order (see the docstring). QuickSort is in-place.
+    # Iterate the Dict directly (not via keys()) to avoid allocating a KeySet
+    # wrapper object on every call — the actual 16 B/step found in issue #11.
     i = 1
-    for node_id in keys(tracker.active_nodes)
+    for (node_id, _) in tracker.active_nodes
         nodes[i] = node_id
         i += 1
     end
