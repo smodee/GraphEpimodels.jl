@@ -138,13 +138,17 @@ function _estimate_survival_threaded(
     start_seed::Int
 )::Dict{Symbol, Any}
 
-    # Pre-create one process per thread (eliminates all locking and false sharing)
+    # Pre-create one process per thread (eliminates all locking and false sharing).
+    # NOTE: the loops below MUST use `:static` scheduling. Indexing the pool by
+    # threadid() is only safe when iterations are statically pinned to threads;
+    # under the default `:dynamic` schedule threadid() is not stable across yield
+    # points, so a migrated task could alias another's process and corrupt results.
     thread_processes = [process_factory() for _ in 1:Threads.nthreads()]
-    
+
     if mode == MINIMAL
         survival_count = Threads.Atomic{Int}(0)
-        
-        @showprogress Threads.@threads for i in 1:num_simulations
+
+        @showprogress Threads.@threads :static for i in 1:num_simulations
             # Get this thread's dedicated process (no locking needed)
             thread_process = thread_processes[Threads.threadid()]
             
@@ -178,8 +182,8 @@ function _estimate_survival_threaded(
         # Pre-allocate results arrays
         results = Vector{NamedTuple{(:survived, :time, :size), Tuple{Bool, Float64, Int}}}(undef, num_simulations)
         
-        @showprogress Threads.@threads for i in 1:num_simulations
-            # Get this thread's dedicated process
+        @showprogress Threads.@threads :static for i in 1:num_simulations
+            # Get this thread's dedicated process (see :static note above)
             thread_process = thread_processes[Threads.threadid()]
             
             # Calculate seed for this specific simulation

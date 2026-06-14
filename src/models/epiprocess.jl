@@ -331,8 +331,15 @@ This is the pattern from your efficient old implementation.
 """
 mutable struct DictActiveTracker <: ActiveNodeTracker
     active_nodes::Dict{Int, Int}  # node_id → susceptible_neighbor_count
-    
-    DictActiveTracker() = new(Dict{Int, Int}())
+
+    # Scratch buffers reused by _weighted_sample_active_fast so that weighted
+    # sampling allocates nothing on the hot path. A tracker is owned by a single
+    # process (and thus a single thread during threaded runs), so reusing these
+    # across calls is safe without any locking. See issues #1 / #3.
+    nodes_buf::Vector{Int}        # idx → node_id
+    cumw_buf::Vector{Int}         # idx → cumulative weight up to and including idx
+
+    DictActiveTracker() = new(Dict{Int, Int}(), Int[], Int[])
 end
 
 """
@@ -456,48 +463,45 @@ Uses the standard weighted sampling algorithm:
 - `ArgumentError`: If no active nodes available
 """
 function _weighted_sample_active(tracker::DictActiveTracker, rng::AbstractRNG)::Int
-    if isempty(tracker.active_nodes)
+    n_active = length(tracker.active_nodes)
+    if n_active == 0
         throw(ArgumentError("No active nodes to sample from"))
     end
-    
-    # Special case: single active node
-    if length(tracker.active_nodes) == 1
-        return first(keys(tracker.active_nodes))
-    end
-    
-    # Get total weight (sum of all susceptible neighbor counts)
-    total_weight = get_total_boundary(tracker)
-    
-    if total_weight <= 0
-        throw(ArgumentError("Total weight is zero - no valid nodes to sample"))
-    end
-    
-    # Sample a random value in [0, total_weight)
-    random_value = rand(rng) * total_weight
-    
-    # Find which node this corresponds to using cumulative weights
-    cumulative_weight = 0.0
-    for (node_id, weight) in tracker.active_nodes
-        cumulative_weight += weight
-        if random_value < cumulative_weight
-            return node_id
-        end
-    end
-    
-    # Shouldn't reach here, but return last node as fallback
-    # (can happen due to floating point rounding)
-    return last(keys(tracker.active_nodes))
+
+    # Delegate to the single canonical (deterministic) sampler so that every
+    # active-set size goes through the same order-independent selection. The
+    # previous implementation walked the Dict directly, which made the chosen
+    # node depend on Dict iteration order — see _weighted_sample_active_fast.
+    return _weighted_sample_active_fast(tracker, n_active, rng)
 end
 
 """
-Alternative weighted sampling implementation using pre-allocated arrays.
+Canonical weighted sampler over the active set, using the tracker's buffers.
 
-More efficient for very large numbers of active nodes, but requires allocation.
-Use this version if you have thousands of active nodes.
+Builds a cumulative-weight array and binary-searches it (`O(n)` to fill plus
+`O(log n)` to sample). Two properties matter:
+
+1. **Allocation-free.** The node/cumulative-weight scratch arrays live on the
+   tracker and are resized in place, so this allocates nothing on the hot path.
+   It runs on every Gillespie step of every simulation; per-step heap allocation
+   here previously caused severe multithreaded GC pressure that serialized worker
+   threads (issues #1 and #3).
+
+2. **Deterministic.** Nodes are sampled in a canonical order (ascending node id),
+   NOT in `Dict` iteration order. A `Dict`'s iteration order depends on its
+   insertion/deletion/rehash history, so two trackers with identical contents but
+   different histories — a freshly constructed process vs. one reused across many
+   simulations, or per-thread processes that each ran a different block of work —
+   would otherwise map the same random draw onto different nodes. That made
+   results depend on execution mode (serial vs. threaded) for a fixed seed.
+   Sorting by node id removes the dependence; QuickSort is in-place so this stays
+   allocation-free.
+
+The tracker is owned by a single process, so buffer reuse needs no locking.
 
 # Arguments
 - `tracker::DictActiveTracker`: Active node tracker with neighbor counts
-- `n_active::Int`: Number of active nodes to use for pre-allocation 
+- `n_active::Int`: Number of active nodes (length of `tracker.active_nodes`)
 - `rng::AbstractRNG`: Random number generator
 
 # Returns
@@ -507,40 +511,48 @@ function _weighted_sample_active_fast(tracker::DictActiveTracker, n_active::Int,
     if n_active == 0
         throw(ArgumentError("No active nodes to sample from"))
     end
-    
+
     if n_active == 1
         return first(keys(tracker.active_nodes))
     end
-    
-    # Pre-allocate arrays for better performance with many nodes
-    nodes = Vector{Int}(undef, n_active)
-    weights = Vector{Int}(undef, n_active)
-    
-    # Fill arrays
+
+    # Reuse the tracker's scratch buffers instead of allocating fresh vectors.
+    nodes = tracker.nodes_buf
+    cumw = tracker.cumw_buf
+    resize!(nodes, n_active)
+    resize!(cumw, n_active)
+
+    # Collect node ids, then sort into a canonical order so sampling does not
+    # depend on Dict iteration order (see the docstring). QuickSort is in-place.
     i = 1
-    for (node_id, weight) in tracker.active_nodes
+    for node_id in keys(tracker.active_nodes)
         nodes[i] = node_id
-        weights[i] = weight
         i += 1
     end
-    
-    # Calculate cumulative weights
-    cumsum_weights = cumsum(weights)
-    total_weight = cumsum_weights[end]
-    
+    sort!(nodes; alg = QuickSort)
+
+    # Build cumulative weights in canonical order.
+    running = 0
+    @inbounds for j in 1:n_active
+        running += tracker.active_nodes[nodes[j]]
+        cumw[j] = running
+    end
+
+    total_weight = running
     if total_weight <= 0
         throw(ArgumentError("Total weight is zero - no valid nodes to sample"))
     end
-    
-    # Binary search for efficiency
+
+    # Binary search for efficiency (one rand() call, searchsortedfirst over the
+    # cumulative weights).
     random_value = rand(rng) * total_weight
-    idx = searchsortedfirst(cumsum_weights, random_value)
-    
+    idx = searchsortedfirst(cumw, random_value)
+
     # Handle edge case where random_value == total_weight
     if idx > n_active
         idx = n_active
     end
-    
+
     return nodes[idx]
 end
 

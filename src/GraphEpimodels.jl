@@ -58,7 +58,7 @@ export BoundaryCondition, ABSORBING, PERIODIC
 export state_to_int, int_to_state
 
 # Core graph interface functions
-export num_nodes, get_neighbors, node_states_raw, set_node_states_raw!
+export num_nodes, get_neighbors, get_neighbors!, node_states_raw, set_node_states_raw!
 export node_states, set_node_states!
 export get_node_state, set_node_state!
 export get_node_degree, get_boundary_nodes, has_boundary

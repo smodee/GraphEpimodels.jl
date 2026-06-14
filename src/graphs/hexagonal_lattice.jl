@@ -99,12 +99,16 @@ function set_node_states_raw!(lattice::HexagonalLattice, states::Vector{Int8})
 end
 
 function get_neighbors(lattice::HexagonalLattice, node_id::Int)::Vector{Int}
+    return get_neighbors!(Int[], lattice, node_id)
+end
+
+function get_neighbors!(neighbors::Vector{Int}, lattice::HexagonalLattice, node_id::Int)::Vector{Int}
     if node_id < 1 || node_id > num_nodes(lattice)
         throw(BoundsError("Node ID $node_id out of range [1, $(num_nodes(lattice))]"))
     end
 
     row, col = _hex_index_to_coord(node_id, lattice.width)
-    neighbors = Int[]
+    empty!(neighbors)
 
     # Two horizontal neighbors (same row).
     _add_hex_neighbor!(neighbors, row, col - 1, lattice)
