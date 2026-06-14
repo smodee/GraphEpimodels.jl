@@ -105,6 +105,34 @@ function get_neighbors(graph::AbstractEpidemicGraph, node_id::Int)::Vector{Int}
 end
 
 """
+Non-allocating variant of [`get_neighbors`](@ref).
+
+Returns the neighbors of `node_id` as a vector that callers must treat as
+**read-only**. Concrete graph types may either fill and return the supplied
+`buffer` (so repeated calls reuse one allocation) or return an internally stored
+neighbor vector directly. Either way the returned vector must not be mutated by
+the caller.
+
+This exists so performance-critical event loops (e.g. the ZIM step) can walk a
+node's neighbors without allocating a fresh `Vector{Int}` on every step — a major
+source of multithreaded GC pressure (issues #1 / #3).
+
+The default implementation falls back to the allocating [`get_neighbors`](@ref),
+so it is always correct; graph types override it where a cheaper path exists.
+
+# Arguments
+- `buffer::Vector{Int}`: Caller-owned scratch buffer that may be reused
+- `graph::AbstractEpidemicGraph`: The graph
+- `node_id::Int`: Node identifier (1-indexed)
+
+# Returns
+- `Vector{Int}`: Read-only neighbor list (possibly `buffer`, possibly internal)
+"""
+function get_neighbors!(buffer::Vector{Int}, graph::AbstractEpidemicGraph, node_id::Int)::Vector{Int}
+    return get_neighbors(graph, node_id)
+end
+
+"""
 Get the raw node states as primitive Int8 array (internal, performance-critical).
 
 This is the internal representation used for all performance-critical operations.

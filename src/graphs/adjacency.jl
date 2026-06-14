@@ -86,6 +86,13 @@ function get_neighbors(graph::AdjacencyGraph, node_id::Int)::Vector{Int}
     return graph.adjacency_list[node_id]
 end
 
+# The adjacency list is already stored, so get_neighbors returns it without
+# allocating. The buffer-filling variant therefore just hands back the stored
+# (read-only) vector and ignores the scratch buffer.
+function get_neighbors!(::Vector{Int}, graph::AdjacencyGraph, node_id::Int)::Vector{Int}
+    return get_neighbors(graph, node_id)
+end
+
 @inline function get_node_degree(graph::AdjacencyGraph, node_id::Int)::Int
     if node_id < 1 || node_id > graph.n_nodes
         throw(BoundsError("Node ID $node_id out of range [1, $(graph.n_nodes)]"))
