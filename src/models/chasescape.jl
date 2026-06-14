@@ -58,8 +58,10 @@ to the approach in ZIM, SIR and Maki-Thompson.
 - `steps::Int`: Number of steps executed
 - `rng::AbstractRNG`: Random number generator
 """
-mutable struct ChaseEscapeProcess{R<:AbstractRNG} <: SIRLikeProcess
-    graph::AbstractEpidemicGraph
+mutable struct ChaseEscapeProcess{G<:AbstractEpidemicGraph, R<:AbstractRNG} <: SIRLikeProcess
+    # Concrete `graph`/`rng` type parameters keep the neighbor queries and
+    # rand()/randexp() calls in step! statically dispatched and box-free (#1/#3).
+    graph::G
     λ::Float64
     μ::Float64
     ghost::Bool
@@ -67,15 +69,13 @@ mutable struct ChaseEscapeProcess{R<:AbstractRNG} <: SIRLikeProcess
     catch_tracker::DictActiveTracker
     time::Float64
     steps::Int
-    # Parametric on the concrete RNG type to keep rand()/randexp() statically
-    # dispatched and allocation-free in the hot path (see issues #1/#3).
     rng::R
 
-    function ChaseEscapeProcess(graph::AbstractEpidemicGraph, λ::Float64, μ::Float64;
+    function ChaseEscapeProcess(graph::G, λ::Float64, μ::Float64;
                                 ghost::Bool = true,
-                                rng::R = Random.default_rng()) where {R<:AbstractRNG}
+                                rng::R = Random.default_rng()) where {G<:AbstractEpidemicGraph, R<:AbstractRNG}
         _validate_chase_escape_parameters(λ, μ)
-        new{R}(graph, λ, μ, ghost,
+        new{G,R}(graph, λ, μ, ghost,
             DictActiveTracker(), DictActiveTracker(),
             0.0, 0, rng)
     end

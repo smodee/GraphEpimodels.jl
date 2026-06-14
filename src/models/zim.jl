@@ -35,17 +35,20 @@ large-scale simulations on lattices and general graphs.
 - `steps::Int`: Number of steps executed
 - `rng::AbstractRNG`: Random number generator
 """
-mutable struct ZIMProcess{R<:AbstractRNG} <: SIRLikeProcess
-    graph::AbstractEpidemicGraph
+mutable struct ZIMProcess{G<:AbstractEpidemicGraph, R<:AbstractRNG} <: SIRLikeProcess
+    # `graph` and `rng` are concrete type parameters rather than the abstract
+    # supertypes. Abstract fields would force every get_neighbors!/
+    # count_neighbors_by_state/rand call in step! through dynamic dispatch
+    # (preventing inlining of the small lattice routines), and rand() would
+    # additionally box its result (~16 bytes/call) — per-step overhead and GC
+    # pressure (cf. issues #1/#3).
+    graph::G
     λ::Float64
     μ::Float64
     infection_prob::Float64
     active_tracker::DictActiveTracker
     time::Float64
     steps::Int
-    # Parametric on the concrete RNG type: an abstract `rng::AbstractRNG` field
-    # would make every rand()/randexp() in step! a dynamic dispatch that boxes
-    # its result (~16 bytes/call), adding per-step GC pressure (cf. issues #1/#3).
     rng::R
     # Reusable scratch buffers for the per-step event handlers, so that stepping
     # allocates nothing on the hot path (see issues #1 / #3). neighbor_buf backs
@@ -55,8 +58,8 @@ mutable struct ZIMProcess{R<:AbstractRNG} <: SIRLikeProcess
     neighbor_buf::Vector{Int}
     susceptible_buf::Vector{Int}
 
-    function ZIMProcess(graph::AbstractEpidemicGraph, λ::Float64, μ::Float64 = 1.0;
-                       rng::R = Random.default_rng()) where {R<:AbstractRNG}
+    function ZIMProcess(graph::G, λ::Float64, μ::Float64 = 1.0;
+                       rng::R = Random.default_rng()) where {G<:AbstractEpidemicGraph, R<:AbstractRNG}
 
         _validate_zim_parameters(λ, μ)
 
@@ -68,7 +71,7 @@ mutable struct ZIMProcess{R<:AbstractRNG} <: SIRLikeProcess
         sizehint!(neighbor_buf, 8)
         sizehint!(susceptible_buf, 8)
 
-        new{R}(graph, λ, μ, infection_prob, active_tracker, 0.0, 0, rng,
+        new{G,R}(graph, λ, μ, infection_prob, active_tracker, 0.0, 0, rng,
             neighbor_buf, susceptible_buf)
     end
 end

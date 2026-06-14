@@ -36,23 +36,23 @@ infected nodes for O(1)-per-step recovery sampling.
 - `steps::Int`: Number of steps executed
 - `rng::AbstractRNG`: Random number generator
 """
-mutable struct SIRProcess{R<:AbstractRNG} <: SIRLikeProcess
-    graph::AbstractEpidemicGraph
+mutable struct SIRProcess{G<:AbstractEpidemicGraph, R<:AbstractRNG} <: SIRLikeProcess
+    # Concrete `graph`/`rng` type parameters: abstract fields would force the
+    # neighbor queries and rand() calls in step! through dynamic dispatch (and
+    # rand() would box its result ~16 bytes/call) — overhead/GC pressure (#1/#3).
+    graph::G
     β::Float64
     γ::Float64
     active_tracker::DictActiveTracker
     infected_nodes::Set{Int}
     time::Float64
     steps::Int
-    # Parametric on the concrete RNG type: an abstract `rng::AbstractRNG` field
-    # would make every rand()/randexp() in step! a dynamic dispatch that boxes
-    # its result (~16 bytes/call), adding per-step GC pressure (cf. issues #1/#3).
     rng::R
 
-    function SIRProcess(graph::AbstractEpidemicGraph, β::Float64, γ::Float64;
-                        rng::R = Random.default_rng()) where {R<:AbstractRNG}
+    function SIRProcess(graph::G, β::Float64, γ::Float64;
+                        rng::R = Random.default_rng()) where {G<:AbstractEpidemicGraph, R<:AbstractRNG}
         _validate_sir_parameters(β, γ)
-        new{R}(graph, β, γ, DictActiveTracker(), Set{Int}(), 0.0, 0, rng)
+        new{G,R}(graph, β, γ, DictActiveTracker(), Set{Int}(), 0.0, 0, rng)
     end
 end
 

@@ -50,8 +50,10 @@ identical to the approach in ZIM and SIR.
 - `steps::Int`: Number of steps executed
 - `rng::AbstractRNG`: Random number generator
 """
-mutable struct MakiThompsonProcess{R<:AbstractRNG} <: SIRLikeProcess
-    graph::AbstractEpidemicGraph
+mutable struct MakiThompsonProcess{G<:AbstractEpidemicGraph, R<:AbstractRNG} <: SIRLikeProcess
+    # Concrete `graph`/`rng` type parameters keep the neighbor queries and
+    # rand()/randexp() calls in step! statically dispatched and box-free (#1/#3).
+    graph::G
     α::Float64
     β::Float64
     stifler_contact::Bool
@@ -60,16 +62,14 @@ mutable struct MakiThompsonProcess{R<:AbstractRNG} <: SIRLikeProcess
     spreaders::Set{Int}
     time::Float64
     steps::Int
-    # Parametric on the concrete RNG type to keep rand()/randexp() statically
-    # dispatched and allocation-free in the hot path (see issues #1/#3).
     rng::R
 
-    function MakiThompsonProcess(graph::AbstractEpidemicGraph,
+    function MakiThompsonProcess(graph::G,
                                   α::Float64, β::Float64,
                                   stifler_contact::Bool;
-                                  rng::R = Random.default_rng()) where {R<:AbstractRNG}
+                                  rng::R = Random.default_rng()) where {G<:AbstractEpidemicGraph, R<:AbstractRNG}
         _validate_mt_parameters(α, β)
-        new{R}(graph, α, β, stifler_contact,
+        new{G,R}(graph, α, β, stifler_contact,
             DictActiveTracker(), DictActiveTracker(),
             Set{Int}(), 0.0, 0, rng)
     end
