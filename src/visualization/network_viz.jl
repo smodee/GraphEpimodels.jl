@@ -44,7 +44,7 @@ mutable struct NetworkVisualizer <: StaticVisualizer
 end
 
 function supported_graph_types(viz::NetworkVisualizer)::Vector{Type}
-    return [AdjacencyGraph]
+    return [AdjacencyGraph, ErdosRenyiGraph]
 end
 
 can_visualize(viz::NetworkVisualizer, graph::AdjacencyGraph)::Bool = true
@@ -132,3 +132,26 @@ function get_visualization_settings(viz::NetworkVisualizer)::Dict{Symbol, Any}
         :show_edges => viz.show_edges
     )
 end
+
+# =============================================================================
+# ErdosRenyiGraph support
+# =============================================================================
+#
+# An Erdős–Rényi graph is a node-link graph: route it to the NetworkVisualizer and
+# delegate the drawing cores to its wrapped AdjacencyGraph (same node order and
+# states, so frames are identical to plotting the inner graph directly).
+
+visualizer_for(graph::ErdosRenyiGraph; kwargs...)::AbstractVisualizer =
+    NetworkVisualizer(; kwargs...)
+
+can_visualize(viz::NetworkVisualizer, graph::ErdosRenyiGraph)::Bool = true
+
+_resolve_positions(graph::ErdosRenyiGraph)::Matrix{Float64} = _resolve_positions(graph.graph)
+
+_draw_network!(ax, viz::NetworkVisualizer, graph::ErdosRenyiGraph, states_raw::Vector{Int8};
+               positions::Union{Matrix{Float64}, Nothing} = nothing) =
+    _draw_network!(ax, viz, graph.graph, states_raw; positions = positions)
+
+render_frame(viz::NetworkVisualizer, graph::ErdosRenyiGraph, states_raw::Vector{Int8};
+             title::String = "", positions::Union{Matrix{Float64}, Nothing} = nothing) =
+    render_frame(viz, graph.graph, states_raw; title = title, positions = positions)

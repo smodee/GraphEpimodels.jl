@@ -86,7 +86,11 @@ include("graphs/adjacency.jl")
 export AdjacencyGraph, set_coords!
 export create_graph_from_matrix, create_graph_from_edges
 export create_complete_graph, create_path_graph, create_cycle_graph, create_star_graph
-export create_random_graph
+
+# Erdős–Rényi random graph (adjacency-list backed)
+include("graphs/erdos_renyi.jl")
+export ErdosRenyiGraph
+export create_erdos_renyi, create_gnp, create_gnm
 
 # =============================================================================
 # Epidemic Process Framework

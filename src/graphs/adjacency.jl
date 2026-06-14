@@ -172,28 +172,31 @@ end
 # =============================================================================
 
 """
-Validate adjacency list structure and detect common errors.
+Validate adjacency list structure and detect common errors (bounds, self-loops,
+duplicate neighbors) in a single allocation-free pass.
+
+Duplicates are found with the "last seen" timestamp trick: `last_seen[nb]` records
+the node whose neighbor list `nb` was most recently seen in, so a repeat within the
+same list is a duplicate. Using `node_id` as the timestamp means the scratch buffer
+never needs clearing between nodes — the whole check costs one `Vector{Int}` of
+length `n` and is O(total degree).
 """
 function _validate_adjacency_list(adjacency_list::Vector{Vector{Int}})
     n = length(adjacency_list)
-    
+    last_seen = zeros(Int, n)
+
     for (node_id, neighbors) in enumerate(adjacency_list)
         for neighbor in neighbors
-            # Check bounds
             if neighbor < 1 || neighbor > n
                 throw(ArgumentError("Invalid neighbor $neighbor for node $node_id (must be in [1, $n])"))
             end
-            
-            # Check for self-loops
             if neighbor == node_id
                 throw(ArgumentError("Self-loop detected: node $node_id lists itself as neighbor"))
             end
-        end
-        
-        # Check for duplicates
-        if length(neighbors) != length(unique(neighbors))
-            duplicates = [x for x in neighbors if count(==(x), neighbors) > 1]
-            throw(ArgumentError("Duplicate neighbors detected for node $node_id: $duplicates"))
+            if last_seen[neighbor] == node_id
+                throw(ArgumentError("Duplicate neighbor $neighbor detected for node $node_id"))
+            end
+            last_seen[neighbor] = node_id
         end
     end
 end
@@ -417,50 +420,8 @@ function create_star_graph(n::Int)::AdjacencyGraph
     return AdjacencyGraph(adjacency_list)
 end
 
-"""
-Create random Erdős-Rényi graph.
-
-# Arguments
-- `n::Int`: Number of nodes
-- `p::Float64`: Probability of edge between any two nodes
-- `rng::AbstractRNG`: Random number generator
-
-# Returns
-- `AdjacencyGraph`: Random graph
-
-# Example
-```julia
-julia> random_graph = create_random_graph(100, 0.1)  # 100 nodes, 10% edge probability
-```
-"""
-function create_random_graph(n::Int, p::Float64, 
-                            rng::AbstractRNG = Random.default_rng())::AdjacencyGraph
-    if n < 1
-        throw(ArgumentError("Number of nodes must be positive"))
-    end
-    if p < 0 || p > 1
-        throw(ArgumentError("Edge probability must be in [0, 1]"))
-    end
-    
-    adjacency_list = [Int[] for _ in 1:n]
-    
-    # Add edges with probability p
-    for i in 1:n
-        for j in (i+1):n  # Only check upper triangle to avoid duplicates
-            if rand(rng) < p
-                push!(adjacency_list[i], j)
-                push!(adjacency_list[j], i)
-            end
-        end
-    end
-    
-    # Sort neighbor lists
-    for neighbors in adjacency_list
-        sort!(neighbors)
-    end
-    
-    return AdjacencyGraph(adjacency_list)
-end
+# Erdős–Rényi random graphs live in their own type/file (graphs/erdos_renyi.jl):
+# create_erdos_renyi / create_gnp / create_gnm return an ErdosRenyiGraph.
 
 # =============================================================================
 # Graph Analysis Utilities
