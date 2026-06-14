@@ -102,7 +102,13 @@ function render_frame(viz::LatticeVisualizer, lattice::AbstractLatticeGraph,
     return fig
 end
 
-# Square lattice: fast path via a per-pixel color image.
+# Square lattice — two paths depending on whether transparency is needed.
+#
+# `image!` is fast but composites alpha against the Cairo surface before writing
+# pixels, so transparent susceptible cells (RGBAf(0,0,0,0)) appear as the
+# background colour rather than as true transparency in the saved PNG.
+# `poly!` renders each cell as a vector path fill; alpha=0 fills are genuinely
+# absent from the output, giving real per-cell transparency.
 function _draw_lattice!(ax, viz::LatticeVisualizer, lattice::SquareLattice,
                         states_raw::Vector{Int8}; transparent_background::Bool = false)
     width, height = lattice.width, lattice.height
@@ -110,14 +116,30 @@ function _draw_lattice!(ax, viz::LatticeVisualizer, lattice::SquareLattice,
                                transparent_background = transparent_background)
     palette = (cS, cI, cR)
 
-    # img[c, r] is the color at position (x = col, y = row).
-    img = Matrix{RGBAf}(undef, width, height)
-    @inbounds for idx in 1:lattice.n_nodes
-        r, c = index_to_coord(lattice, idx)
-        img[c, r] = palette[Int(states_raw[idx]) + 1]
+    if transparent_background
+        polys  = Vector{Vector{Point2f}}(undef, lattice.n_nodes)
+        colors = Vector{RGBAf}(undef, lattice.n_nodes)
+        @inbounds for idx in 1:lattice.n_nodes
+            r, c = index_to_coord(lattice, idx)
+            xf, yf = Float32(c), Float32(r)
+            polys[idx]  = [Point2f(xf - 0.5f0, yf - 0.5f0),
+                           Point2f(xf + 0.5f0, yf - 0.5f0),
+                           Point2f(xf + 0.5f0, yf + 0.5f0),
+                           Point2f(xf - 0.5f0, yf + 0.5f0)]
+            colors[idx] = palette[Int(states_raw[idx]) + 1]
+        end
+        strokewidth = viz.show_grid ? 0.5 : 0.0
+        poly!(ax, polys; color = colors, strokewidth = strokewidth,
+              strokecolor = (:gray, 0.5))
+    else
+        # Fast path via a per-pixel color image.
+        img = Matrix{RGBAf}(undef, width, height)
+        @inbounds for idx in 1:lattice.n_nodes
+            r, c = index_to_coord(lattice, idx)
+            img[c, r] = palette[Int(states_raw[idx]) + 1]
+        end
+        image!(ax, (0.5, width + 0.5), (0.5, height + 0.5), img; interpolate = false)
     end
-
-    image!(ax, (0.5, width + 0.5), (0.5, height + 0.5), img; interpolate = false)
 
     if viz.show_boundary && has_boundary(lattice)
         _draw_boundary_box!(ax, 0.5, width + 0.5, 0.5, height + 0.5)
