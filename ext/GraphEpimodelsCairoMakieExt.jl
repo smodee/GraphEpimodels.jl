@@ -39,16 +39,22 @@ end
 # Lattice rendering
 # =============================================================================
 
-"""Create a clean figure + axis (equal aspect, no decorations) for a lattice frame."""
-function _lattice_axis(viz::LatticeVisualizer; title::String = "",
-                       transparent_background::Bool = false)
+"""Create a clean figure + axis (equal aspect, no decorations)."""
+function _make_axis(figure_size::Tuple{Int,Int}; title::String = "",
+                    transparent_background::Bool = false)
     bg = transparent_background ? :transparent : :white
-    fig = Figure(size = viz.figure_size, backgroundcolor = bg)
-    ax = Axis(fig[1, 1]; title = title, aspect = DataAspect(),
-              backgroundcolor = bg)
+    fig = Figure(size = figure_size, backgroundcolor = bg)
+    ax = Axis(fig[1, 1]; title = title, aspect = DataAspect(), backgroundcolor = bg)
     hidedecorations!(ax)
     hidespines!(ax)
     return fig, ax
+end
+
+"""Create a clean figure + axis (equal aspect, no decorations) for a lattice frame."""
+function _lattice_axis(viz::LatticeVisualizer; title::String = "",
+                       transparent_background::Bool = false)
+    return _make_axis(viz.figure_size; title = title,
+                      transparent_background = transparent_background)
 end
 
 """
@@ -266,9 +272,11 @@ end
 # Draw one recorded frame into an existing axis, dispatched on visualizer type.
 # Reuses the same drawing cores as the static `render_frame`, so animation frames
 # look identical to static snapshots.
-_draw_frame!(ax, viz::LatticeVisualizer, graph, states; positions = nothing) =
-    _draw_lattice!(ax, viz, graph, states)
-_draw_frame!(ax, viz::NetworkVisualizer, graph, states; positions = nothing) =
+_draw_frame!(ax, viz::LatticeVisualizer, graph, states;
+             positions = nothing, transparent_background::Bool = false) =
+    _draw_lattice!(ax, viz, graph, states; transparent_background = transparent_background)
+_draw_frame!(ax, viz::NetworkVisualizer, graph, states; positions = nothing,
+             transparent_background::Bool = false) =
     _draw_network!(ax, viz, graph, states; positions = positions)
 
 """Fixed drawing limits (with margin) so the view doesn't jitter between frames."""
@@ -313,6 +321,8 @@ function GraphEpimodels.animate_recording(rec::SimulationRecording;
                                           figure_size::Tuple{Int, Int} = (600, 600),
                                           show_boundary::Bool = false,
                                           show_grid::Bool = false,
+                                          show_title::Bool = true,
+                                          transparent_background::Bool = false,
                                           visualizer::Union{AbstractVisualizer, Nothing} = nothing)
     graph = rec.graph
     if visualizer === nothing
@@ -332,18 +342,21 @@ function GraphEpimodels.animate_recording(rec::SimulationRecording;
                 node_positions(graph)
     xlo, xhi, ylo, yhi = _frame_limits(positions)
 
-    fig = Figure(size = figure_size)
-    ax = Axis(fig[1, 1]; aspect = DataAspect())
-    hidedecorations!(ax)
-    hidespines!(ax)
+    title0 = show_title ? _frame_title(rec, 1) : ""
+    fig, ax = _make_axis(figure_size; title = title0,
+                         transparent_background = transparent_background)
     limits!(ax, xlo, xhi, ylo, yhi)
 
     layout_pos = viz isa NetworkVisualizer ? positions : nothing
     n = num_frames(rec)
     record(fig, filename, 1:n; framerate = fps) do idx
         empty!(ax)
-        ax.title = _frame_title(rec, idx)
-        _draw_frame!(ax, viz, graph, rec.frames[idx]; positions = layout_pos)
+        if show_title
+            ax.title = _frame_title(rec, idx)
+        end
+        _draw_frame!(ax, viz, graph, rec.frames[idx];
+                     positions = layout_pos,
+                     transparent_background = transparent_background)
     end
 
     println("Animation saved to: $filename ($n frames, $fps fps)")
@@ -377,6 +390,8 @@ function GraphEpimodels.animate_simulation(process::AbstractEpidemicProcess;
                                            figure_size::Tuple{Int, Int} = (600, 600),
                                            show_boundary::Bool = false,
                                            show_grid::Bool = false,
+                                           show_title::Bool = true,
+                                           transparent_background::Bool = false,
                                            visualizer::Union{AbstractVisualizer, Nothing} = nothing)::SimulationRecording
     rec = record_simulation(process;
                             sampler = sampler,
@@ -391,6 +406,8 @@ function GraphEpimodels.animate_simulation(process::AbstractEpidemicProcess;
                       figure_size = figure_size,
                       show_boundary = show_boundary,
                       show_grid = show_grid,
+                      show_title = show_title,
+                      transparent_background = transparent_background,
                       visualizer = visualizer)
 
     return rec
