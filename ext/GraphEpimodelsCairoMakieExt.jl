@@ -148,29 +148,42 @@ function GraphEpimodels.visualize_state(viz::LatticeVisualizer, process::Abstrac
 end
 
 """
-Save a lattice visualization to file (format from the filename extension).
+Save a static visualization of a process to file (format from the filename extension).
+
+The visualizer is chosen by graph type via `visualizer_for`, so this works for
+lattices (square / triangular / hexagonal, drawn as dual-tiling cells) and for
+general / structured / random graphs (drawn as node-link diagrams) alike. The
+lattice-only options (`transparent_background`, `show_boundary`, `show_grid`) are
+ignored for node-link graphs.
 
 # Arguments
 - `process::AbstractEpidemicProcess`: Process to visualize
 - `filename::String`: Output path (`.png`, `.pdf`, `.svg`)
-- `color_scheme::Symbol`: Color scheme (default: `:zim`)
+- `color_scheme::Union{Symbol, Nothing}`: Color scheme; `nothing` (default) picks a
+  model-appropriate scheme via `default_color_scheme`
 - `figure_size::Tuple{Int, Int}`: Plot dimensions in pixels (default: (800, 800))
-- `transparent_background::Bool`: Transparent background + susceptible cells (default: false)
-- `show_boundary::Bool`: Outline the lattice boundary (default: false)
+- `transparent_background::Bool`: Transparent background + susceptible cells (lattices only; default: false)
+- `show_boundary::Bool`: Outline the lattice boundary (lattices only; default: false)
+- `show_grid::Bool`: Stroke cell outlines (cell lattices only; default: false)
 """
-function GraphEpimodels.save_lattice_plot(process::AbstractEpidemicProcess, filename::String;
-                                          color_scheme::Symbol = :zim,
+function GraphEpimodels.save_plot(process::AbstractEpidemicProcess, filename::String;
+                                          color_scheme::Union{Symbol, Nothing} = nothing,
                                           figure_size::Tuple{Int, Int} = (800, 800),
                                           transparent_background::Bool = false,
                                           show_boundary::Bool = false,
                                           show_grid::Bool = false)
-    viz = LatticeVisualizer(color_scheme = color_scheme,
-                            figure_size = figure_size,
-                            show_boundary = show_boundary,
-                            show_grid = show_grid)
-    fig = visualize_state(viz, process; transparent_background = transparent_background)
+    scheme = color_scheme === nothing ? default_color_scheme(process) : color_scheme
+    graph = get_graph(process)
+    viz = visualizer_for(graph; color_scheme = scheme, figure_size = figure_size)
+    if viz isa LatticeVisualizer
+        viz.show_boundary = show_boundary
+        viz.show_grid = show_grid
+        fig = visualize_state(viz, process; transparent_background = transparent_background)
+    else
+        fig = visualize_state(viz, process)
+    end
     save(filename, fig)
-    println("Lattice visualization saved to: $filename")
+    println("Visualization saved to: $filename")
     return fig
 end
 
@@ -181,8 +194,13 @@ end
 """
 Resolve node positions for a graph: attached coordinates if present, else a
 force-directed (spring) layout. Returns a `2 × n` `Matrix{Float64}`.
+
+Works for any `AbstractEpidemicGraph`: structured implicit graphs and lattices
+carry an intrinsic layout (`has_layout`), an `ErdosRenyiGraph` forwards the layout
+of its wrapped graph, and a bare `AdjacencyGraph` with no coordinates falls back
+to a spring layout.
 """
-function _resolve_positions(graph::AdjacencyGraph)::Matrix{Float64}
+function _resolve_positions(graph::AbstractEpidemicGraph)::Matrix{Float64}
     if has_layout(graph)
         pos = node_positions(graph)
         return size(pos, 1) == 2 ? pos : pos[1:2, :]   # drop z for 2D draw
@@ -201,10 +219,8 @@ function _resolve_positions(graph::AdjacencyGraph)::Matrix{Float64}
     return mat
 end
 
-_resolve_positions(graph::ErdosRenyiGraph)::Matrix{Float64} = _resolve_positions(graph.graph)
-
 """Draw a network frame into an existing axis (edges + colored node markers)."""
-function _draw_network!(ax, viz::NetworkVisualizer, graph::AdjacencyGraph,
+function _draw_network!(ax, viz::NetworkVisualizer, graph::AbstractEpidemicGraph,
                         states_raw::Vector{Int8};
                         positions::Union{Matrix{Float64}, Nothing} = nothing)
     pos = positions === nothing ? _resolve_positions(graph) : positions
@@ -225,11 +241,7 @@ function _draw_network!(ax, viz::NetworkVisualizer, graph::AdjacencyGraph,
     return ax
 end
 
-_draw_network!(ax, viz::NetworkVisualizer, graph::ErdosRenyiGraph, states_raw::Vector{Int8};
-               positions::Union{Matrix{Float64}, Nothing} = nothing) =
-    _draw_network!(ax, viz, graph.graph, states_raw; positions = positions)
-
-function GraphEpimodels.render_frame(viz::NetworkVisualizer, graph::AdjacencyGraph,
+function GraphEpimodels.render_frame(viz::NetworkVisualizer, graph::AbstractEpidemicGraph,
                                      states_raw::Vector{Int8}; title::String = "",
                                      positions::Union{Matrix{Float64}, Nothing} = nothing)
     fig = Figure(size = viz.figure_size)
@@ -239,10 +251,6 @@ function GraphEpimodels.render_frame(viz::NetworkVisualizer, graph::AdjacencyGra
     _draw_network!(ax, viz, graph, states_raw; positions = positions)
     return fig
 end
-
-GraphEpimodels.render_frame(viz::NetworkVisualizer, graph::ErdosRenyiGraph, states_raw::Vector{Int8};
-                            title::String = "", positions::Union{Matrix{Float64}, Nothing} = nothing) =
-    render_frame(viz, graph.graph, states_raw; title = title, positions = positions)
 
 function GraphEpimodels.visualize_state(viz::NetworkVisualizer, process::AbstractEpidemicProcess)
     validate_visualizer_compatibility(viz, process)
@@ -278,29 +286,41 @@ Render a recording to an animated GIF or MP4 (format from the filename extension
 Each frame is drawn with the same drawing core used by `visualize_state`, so
 frames look identical to static snapshots. The visualizer is chosen by graph type
 via `visualizer_for`, so this works for square / triangular / hexagonal lattices
-and for general (adjacency) graphs alike.
+and for general / structured / random graphs alike. Pass an explicit `visualizer`
+to override that choice — e.g. a `NetworkVisualizer` to draw a lattice as a
+node-link diagram.
 
 # Arguments
 - `rec::SimulationRecording`: The recording to animate
-- `color_scheme::Symbol`: Color scheme (default: `:sir`)
+- `color_scheme::Union{Symbol, Nothing}`: Color scheme; `nothing` (default) picks a
+  model-appropriate scheme from the recording's process name via `default_color_scheme`.
+  Ignored when an explicit `visualizer` is supplied (the visualizer carries its own).
 - `fps::Int`: Frames per second of the output (default: 15)
 - `filename::String`: Output path; `.gif` or `.mp4` (default: "simulation.gif")
 - `figure_size::Tuple{Int, Int}`: Frame size in pixels (default: (600, 600))
 - `show_boundary::Bool`: Outline the lattice boundary (lattices only; default: false)
 - `show_grid::Bool`: Stroke cell outlines (cell lattices only; default: false)
+- `visualizer::Union{AbstractVisualizer, Nothing}`: Override the auto-selected
+  visualizer (default: `nothing` → chosen by graph type).
 
 # Returns
 - `String`: The output filename.
 """
 function GraphEpimodels.animate_recording(rec::SimulationRecording;
-                                          color_scheme::Symbol = :sir,
+                                          color_scheme::Union{Symbol, Nothing} = nothing,
                                           fps::Int = 15,
                                           filename::String = "simulation.gif",
                                           figure_size::Tuple{Int, Int} = (600, 600),
                                           show_boundary::Bool = false,
-                                          show_grid::Bool = false)
+                                          show_grid::Bool = false,
+                                          visualizer::Union{AbstractVisualizer, Nothing} = nothing)
     graph = rec.graph
-    viz = visualizer_for(graph; color_scheme = color_scheme, figure_size = figure_size)
+    if visualizer === nothing
+        scheme = color_scheme === nothing ? default_color_scheme(rec.process_name) : color_scheme
+        viz = visualizer_for(graph; color_scheme = scheme, figure_size = figure_size)
+    else
+        viz = visualizer
+    end
     if viz isa LatticeVisualizer
         viz.show_boundary = show_boundary
         viz.show_grid = show_grid
@@ -351,12 +371,13 @@ function GraphEpimodels.animate_simulation(process::AbstractEpidemicProcess;
                                            max_time::Float64 = Inf,
                                            max_steps::Int = typemax(Int),
                                            stop_on_escape::Bool = false,
-                                           color_scheme::Symbol = :sir,
+                                           color_scheme::Union{Symbol, Nothing} = nothing,
                                            fps::Int = 15,
                                            filename::String = "simulation.gif",
                                            figure_size::Tuple{Int, Int} = (600, 600),
                                            show_boundary::Bool = false,
-                                           show_grid::Bool = false)::SimulationRecording
+                                           show_grid::Bool = false,
+                                           visualizer::Union{AbstractVisualizer, Nothing} = nothing)::SimulationRecording
     rec = record_simulation(process;
                             sampler = sampler,
                             max_time = max_time,
@@ -369,7 +390,8 @@ function GraphEpimodels.animate_simulation(process::AbstractEpidemicProcess;
                       filename = filename,
                       figure_size = figure_size,
                       show_boundary = show_boundary,
-                      show_grid = show_grid)
+                      show_grid = show_grid,
+                      visualizer = visualizer)
 
     return rec
 end

@@ -8,4 +8,5 @@ using Random
     include("test_erdos_renyi.jl")
     include("test_complete_graph.jl")
     include("test_structured_graphs.jl")
+    include("test_visualization.jl")
 end

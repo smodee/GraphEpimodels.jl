@@ -181,13 +181,13 @@ include("visualization/visualization.jl")
 export AbstractVisualizer, StaticVisualizer, InteractiveVisualizer
 export visualize_state, supported_graph_types, can_visualize
 export visualizer_for, create_auto_visualizer, render_frame
-export COLOR_SCHEMES, get_state_color, available_color_schemes, print_color_schemes
-export extract_visualization_data, generate_visualization_title
+export COLOR_SCHEMES, available_color_schemes, print_color_schemes, default_color_scheme
+export generate_visualization_title
 export FIGURE_SIZES, get_figure_size
 
 # Lattice visualization (square / triangular / hexagonal)
 include("visualization/lattice_viz.jl")
-export LatticeVisualizer, save_lattice_plot
+export LatticeVisualizer, save_plot
 
 # Network visualization (general adjacency graphs)
 include("visualization/network_viz.jl")

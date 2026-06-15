@@ -33,7 +33,7 @@ mutable struct NetworkVisualizer <: StaticVisualizer
     edge_color
 
     function NetworkVisualizer(;
-                              color_scheme::Symbol = :sir,
+                              color_scheme::Symbol = :general,
                               figure_size::Tuple{Int, Int} = (700, 700),
                               node_size::Real = 12.0,
                               show_edges::Bool = true,
@@ -45,11 +45,13 @@ mutable struct NetworkVisualizer <: StaticVisualizer
 end
 
 function supported_graph_types(viz::NetworkVisualizer)::Vector{Type}
-    return [AdjacencyGraph, ErdosRenyiGraph]
+    return [AdjacencyGraph, ErdosRenyiGraph,
+            CompleteGraph, CycleGraph, PathGraph, StarGraph]
 end
 
-can_visualize(viz::NetworkVisualizer, graph::AdjacencyGraph)::Bool = true
-can_visualize(viz::NetworkVisualizer, graph::ErdosRenyiGraph)::Bool = true
+# A node-link visualizer can draw *any* graph: positions come from an attached
+# layout when present, or a force-directed fallback otherwise.
+can_visualize(viz::NetworkVisualizer, graph::AbstractEpidemicGraph)::Bool = true
 
 function get_visualization_settings(viz::NetworkVisualizer)::Dict{Symbol, Any}
     return Dict{Symbol, Any}(
@@ -60,13 +62,7 @@ function get_visualization_settings(viz::NetworkVisualizer)::Dict{Symbol, Any}
     )
 end
 
-# =============================================================================
-# Visualizer dispatch for Erdős–Rényi graphs
-# =============================================================================
-#
-# (Dispatch for AbstractLatticeGraph and AdjacencyGraph lives in
-# visualization.jl.) An Erdős–Rényi graph is a node-link graph, so it routes to
-# the NetworkVisualizer; the extension delegates its drawing to the wrapped
-# AdjacencyGraph.
-visualizer_for(graph::ErdosRenyiGraph; kwargs...)::AbstractVisualizer =
-    NetworkVisualizer(; kwargs...)
+# Visualizer dispatch lives in visualization.jl: the generic
+# `visualizer_for(::AbstractEpidemicGraph)` fallback routes every non-lattice graph
+# (general `AdjacencyGraph`, `ErdosRenyiGraph`, and the structured implicit graphs)
+# to the `NetworkVisualizer`.
