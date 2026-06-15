@@ -102,6 +102,8 @@ include("graphs/cycle.jl")
 export CycleGraph, create_cycle_graph
 include("graphs/star.jl")
 export StarGraph, create_star_graph
+include("graphs/regular_tree.jl")
+export RegularTree, create_regular_tree
 
 # =============================================================================
 # Epidemic Process Framework
