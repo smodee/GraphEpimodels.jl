@@ -2,6 +2,7 @@ using Test
 using GraphEpimodels
 using Random
 using Statistics
+using Logging
 
 # Every directed neighbor relation is mirrored (undirected graph).
 function _er_is_symmetric(g)
@@ -95,6 +96,17 @@ _edge_count(g) = sum(length(get_neighbors(g, i)) for i in 1:num_nodes(g)) ÷ 2
         single = create_gnp(1, 0.5)
         @test num_nodes(single) == 1
         @test _edge_count(single) == 0
+    end
+
+    @testset "complete-graph fallback advisory" begin
+        # Small degenerate cases stay silent — the materialized K_n is cheap there.
+        @test_logs min_level = Logging.Warn create_gnp(20, 1.0)
+        @test_logs min_level = Logging.Warn create_gnm(20, 20 * 19 ÷ 2)
+
+        # Above the materialization threshold the helper warns (call it directly so
+        # no O(n²) graph is built), pointing users to CompleteGraph.
+        @test_logs (:warn, r"CompleteGraph") GraphEpimodels._warn_complete_fallback(
+            GraphEpimodels._COMPLETE_FALLBACK_WARN_N + 1)
     end
 
     @testset "interface forwarding" begin
