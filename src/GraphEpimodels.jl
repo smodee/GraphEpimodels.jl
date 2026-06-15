@@ -39,9 +39,11 @@ module GraphEpimodels
 
 using Random
 using Statistics
-using CairoMakie
-using Colors
 using ProgressMeter
+
+# Plotting/animation (Makie) and CSV persistence are optional: their code lives
+# in package extensions (see ext/) that load only when the user brings in
+# `CairoMakie` / `CSV` + `DataFrames`. Loading GraphEpimodels alone stays light.
 
 # Re-export commonly used modules
 export Random

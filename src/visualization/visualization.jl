@@ -423,3 +423,22 @@ function generate_visualization_title(process::AbstractEpidemicProcess,
         return base_title
     end
 end
+
+# =============================================================================
+# Makie-backed entry points (implemented in the CairoMakie extension)
+# =============================================================================
+#
+# `render_frame`, `save_lattice_plot`, `animate_recording`, and
+# `animate_simulation` are implemented in ext/GraphEpimodelsCairoMakieExt.jl,
+# which loads only when the user runs `using CairoMakie`. They are declared here
+# (as generic functions) so the package can export them and the extension can add
+# the concrete, type-specialized methods. Without CairoMakie loaded, only these
+# fallbacks exist and give an actionable error. (`visualize_state` already has a
+# generic fallback above.)
+
+const _MAKIE_HINT = "requires CairoMakie. Run `using CairoMakie` to enable plotting/animation."
+
+render_frame(args...; kwargs...)      = error("render_frame $_MAKIE_HINT")
+save_lattice_plot(args...; kwargs...) = error("save_lattice_plot $_MAKIE_HINT")
+animate_recording(args...; kwargs...) = error("animate_recording $_MAKIE_HINT")
+animate_simulation(args...; kwargs...) = error("animate_simulation $_MAKIE_HINT")
