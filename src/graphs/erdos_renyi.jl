@@ -189,6 +189,25 @@ end
 # Public constructors
 # =============================================================================
 
+# Above this node count, materializing the complete graph (the degenerate p == 1 /
+# m == n(n-1)/2 case) costs enough memory to be worth flagging — the same threshold
+# the former create_complete_graph used.
+const _COMPLETE_FALLBACK_WARN_N = 10_000
+
+"""
+Warn (once) when Erdős–Rényi parameters select the complete graph at a size where
+the O(n²) adjacency-list materialization is costly, pointing to the dedicated
+[`CompleteGraph`](@ref) type.
+"""
+function _warn_complete_fallback(n::Int)
+    n > _COMPLETE_FALLBACK_WARN_N && @warn(
+        "Erdős–Rényi parameters select the complete graph K_$n, built here as a " *
+        "materialized O(n²) adjacency list. For a complete graph, prefer the " *
+        "dedicated CompleteGraph type (create_complete_graph), which stores only n.",
+        maxlog = 1)
+    return nothing
+end
+
 """
 Create an Erdős–Rényi random graph.
 
@@ -208,6 +227,12 @@ Provide **exactly one** of `p` (the G(n, p) model) or `m` (the G(n, m) model).
 julia> g = create_erdos_renyi(100; p = 0.1)        # G(n, p)
 julia> h = create_erdos_renyi(100; m = 250)        # G(n, m)
 ```
+
+# Note
+The degenerate cases `p == 1` and `m == n(n-1)/2` yield the complete graph,
+materialized as an O(n²) adjacency list. If you specifically want `K_n`, prefer
+the dedicated [`CompleteGraph`](@ref) type (`create_complete_graph`), which stores
+only `n`; at large `n` these cases emit a one-time warning.
 """
 function create_erdos_renyi(n::Int;
                             p::Union{Real, Nothing} = nothing,
@@ -222,11 +247,13 @@ function create_erdos_renyi(n::Int;
     if p !== nothing
         (0.0 <= p <= 1.0) ||
             throw(ArgumentError("Edge probability p must be in [0, 1] (got $p)"))
+        Float64(p) >= 1.0 && _warn_complete_fallback(n)
         graph = AdjacencyGraph(_erdos_renyi_gnp(n, Float64(p), rng))
         realized_m = sum(graph.node_degrees) ÷ 2
         return ErdosRenyiGraph(graph, :gnp, Float64(p), realized_m)
     else
         m >= 0 || throw(ArgumentError("Edge count m must be non-negative (got $m)"))
+        Int(m) == total && _warn_complete_fallback(n)
         graph = AdjacencyGraph(_erdos_renyi_gnm(n, Int(m), rng))   # validates m ≤ total
         density = total == 0 ? 0.0 : m / total
         return ErdosRenyiGraph(graph, :gnm, density, Int(m))
