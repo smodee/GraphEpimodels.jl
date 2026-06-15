@@ -77,6 +77,29 @@ function set_global_seed!(seed::Int)
 end
 
 # =============================================================================
+# Initial Node Resolution
+# =============================================================================
+
+"""
+Resolve an `initial_nodes` spec into a concrete `Vector{Int}`.
+
+Accepts `:center` (graph center or midpoint fallback), `:random` (one random
+node), or an explicit `Vector{Int}` that is returned as-is.
+"""
+function resolve_initial_nodes(graph::AbstractEpidemicGraph,
+                               spec::Union{Symbol, Vector{Int}},
+                               rng::AbstractRNG)::Vector{Int}
+    if spec == :center
+        hasmethod(get_center_node, (typeof(graph),)) ?
+            [get_center_node(graph)] : [num_nodes(graph) ÷ 2]
+    elseif spec == :random
+        [rand(rng, 1:num_nodes(graph))]
+    else
+        spec
+    end
+end
+
+# =============================================================================
 # Performance Monitoring
 # =============================================================================
 

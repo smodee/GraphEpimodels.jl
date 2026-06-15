@@ -21,7 +21,7 @@ For parallel survival probability analysis, start Julia with multiple threads:
 using GraphEpimodels
 
 # Create ZIM simulation on 100×100 lattice
-zim = create_zim_simulation(100, 100, 2.0)  # λ = 2.0
+zim = create_zim_process(100, 100, 2.0)  # λ = 2.0
 
 # Run single simulation  
 results = run_simulation(zim; max_time=50.0)
@@ -126,25 +126,25 @@ export run_simulation
 include("models/zim.jl")
 export ZIMProcess
 export has_escaped, get_zim_statistics
-export create_zim_simulation
+export create_zim_process
 
 # SIR Model
 include("models/sir.jl")
 export SIRProcess
 export get_sir_statistics
-export create_sir_simulation
+export create_sir_process
 
 # Maki-Thompson Rumor Spreading Model
 include("models/maki_thompson.jl")
 export MakiThompsonProcess
 export get_maki_thompson_statistics
-export create_maki_thompson_simulation
+export create_maki_thompson_process
 
 # Chase-Escape Model
 include("models/chasescape.jl")
 export ChaseEscapeProcess
 export get_chase_escape_statistics
-export create_chase_escape_simulation
+export create_chase_escape_process
 
 # =============================================================================
 # Utilities
@@ -221,7 +221,7 @@ function print_info()
     println()
     println("Quick start:")
     println("  julia> using GraphEpimodels")
-    println("  julia> zim = create_zim_simulation(100, 100, 2.0)")
+    println("  julia> zim = create_zim_process(100, 100, 2.0)")
     println("  julia> results = run_simulation(zim)")
     println("  julia> println(\"Escaped: \", has_escaped(zim))")
     println()

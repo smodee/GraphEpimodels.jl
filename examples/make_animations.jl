@@ -65,23 +65,23 @@ patch = center_patch(L, 2)   # 5x5 = 25-node center seed (robust takeoff)
 
 # 1. SIR — infection (red) sweeps out leaving recovered (gray) behind.
 animate_model("SIR",
-    () -> create_sir_simulation(L, L, 3.0, 1.0; initial_infected=patch, rng_seed=SEED);
+    () -> create_sir_process(L, L, 3.0, 1.0; initial_infected=patch, rng_seed=SEED);
     color_scheme = :sir, filename = "sir.gif")
 
 # 2. ZIM (Zombie Infection Model) — zombies (green) spread, killed (red) behind.
 animate_model("ZIM",
-    () -> create_zim_simulation(L, L, 3.0, 1.0; initial_infected=patch, rng_seed=SEED);
+    () -> create_zim_process(L, L, 3.0, 1.0; initial_infected=patch, rng_seed=SEED);
     color_scheme = :zim, filename = "zim.gif")
 
 # 3. Maki-Thompson rumor spreading — spreaders (orange) advance, stiflers (purple) behind.
 animate_model("Maki-Thompson",
-    () -> create_maki_thompson_simulation(L, L, 3.0, 1.0; initial_infected=patch, rng_seed=SEED);
+    () -> create_maki_thompson_process(L, L, 3.0, 1.0; initial_infected=patch, rng_seed=SEED);
     color_scheme = :medical, filename = "maki_thompson.gif")
 
 # 4. Chase-escape (predator-prey) — prey (red) escapes outward, predator (blue) chases from within.
 #    Needs lambda > mu so prey can outrun the predator; ghost seeds the chase from the center patch.
 animate_model("Chase-escape",
-    () -> create_chase_escape_simulation(L, L, 3.0, 1.0; ghost=true, initial_red=patch, rng_seed=SEED);
+    () -> create_chase_escape_process(L, L, 3.0, 1.0; ghost=true, initial_red=patch, rng_seed=SEED);
     color_scheme = :chaseescape, filename = "chase_escape.gif")
 
 # =============================================================================

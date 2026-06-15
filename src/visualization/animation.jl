@@ -24,11 +24,11 @@ Two sampling regimes (see `FrameSampler`):
 using GraphEpimodels, CairoMakie   # CairoMakie enables animate_*
 
 # Small lattice — animate every transition
-sir = create_sir_simulation(30, 30, 0.6, 1.0; initial_infected=:center, rng_seed=1)
+sir = create_sir_process(30, 30, 0.6, 1.0; initial_infected=:center, rng_seed=1)
 animate_simulation(sir; sampler=EveryStep(), color_scheme=:sir, filename="sir_small.gif")
 
 # Large lattice — equal-time sampling for faithful playback
-big = create_sir_simulation(200, 200, 0.6, 1.0; initial_infected=:center, rng_seed=1)
+big = create_sir_process(200, 200, 0.6, 1.0; initial_infected=:center, rng_seed=1)
 animate_simulation(big; sampler=TimeInterval(0.5), max_time=40.0, filename="sir_large.mp4")
 ```
 """

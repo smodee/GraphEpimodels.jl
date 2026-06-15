@@ -244,7 +244,7 @@ Run complete simulation until stopping condition.
 
 # Example
 ```julia
-julia> zim = create_zim_simulation(100, 100, 2.0)
+julia> zim = create_zim_process(100, 100, 2.0)
 julia> results = run_simulation(zim; max_time=50.0)
 julia> println("Final infected: ", results[:infected])
 ```
