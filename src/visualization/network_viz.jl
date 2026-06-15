@@ -46,7 +46,7 @@ end
 
 function supported_graph_types(viz::NetworkVisualizer)::Vector{Type}
     return [AdjacencyGraph, ErdosRenyiGraph,
-            CompleteGraph, CycleGraph, PathGraph, StarGraph]
+            CompleteGraph, CycleGraph, PathGraph, StarGraph, RegularTree]
 end
 
 # A node-link visualizer can draw *any* graph: positions come from an attached
