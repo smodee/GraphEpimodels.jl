@@ -50,7 +50,7 @@ end
 
 println("Square lattice ...")
 
-sq = create_sir_simulation(40, 40, 4.0, 1.0; rng_seed = SEED)
+sq = create_sir_process(40, 40, 4.0, 1.0; rng_seed = SEED)
 run_to_mid(sq)
 
 viz_sq = LatticeVisualizer(color_scheme = :sir, figure_size = (500, 500), show_grid = true)

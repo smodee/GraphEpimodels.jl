@@ -336,46 +336,33 @@ Create a complete Maki-Thompson simulation setup.
 # Example
 ```julia
 julia> lattice = create_square_lattice(100, 100, :absorbing)
-julia> mt = create_maki_thompson_simulation(lattice, 1.0)
+julia> mt = create_maki_thompson_process(lattice, 1.0)
 julia> results = run_simulation(mt)
 ```
 """
-function create_maki_thompson_simulation(graph::AbstractEpidemicGraph,
-                                          α::Float64, β::Float64 = 1.0;
-                                          stifler_contact::Bool = true,
-                                          initial_infected::Union{Symbol, Vector{Int}} = :center,
-                                          rng_seed::Union{Int, Nothing} = nothing)
+function create_maki_thompson_process(graph::AbstractEpidemicGraph,
+                                      α::Float64, β::Float64 = 1.0;
+                                      stifler_contact::Bool = true,
+                                      initial_infected::Union{Symbol, Vector{Int}} = :center,
+                                      rng_seed::Union{Int, Nothing} = nothing)
     rng     = create_rng(rng_seed)
     process = MakiThompsonProcess(graph, α, β, stifler_contact; rng = rng)
-
-    infected_nodes = if initial_infected == :center
-        if hasmethod(get_center_node, (typeof(graph),))
-            [get_center_node(graph)]
-        else
-            [num_nodes(graph) ÷ 2]
-        end
-    elseif initial_infected == :random
-        [rand(rng, 1:num_nodes(graph))]
-    else
-        initial_infected
-    end
-
-    reset!(process, infected_nodes)
+    reset!(process, resolve_initial_nodes(graph, initial_infected, rng))
     return process
 end
 
 """
-Convenience function for creating a Maki-Thompson simulation on a square lattice.
+Convenience overload for creating a Maki-Thompson process on a square lattice.
 """
-function create_maki_thompson_simulation(width::Int, height::Int,
-                                          α::Float64, β::Float64 = 1.0;
-                                          stifler_contact::Bool = true,
-                                          boundary::Symbol = :absorbing,
-                                          initial_infected::Union{Symbol, Vector{Int}} = :center,
-                                          rng_seed::Union{Int, Nothing} = nothing)
+function create_maki_thompson_process(width::Int, height::Int,
+                                      α::Float64, β::Float64 = 1.0;
+                                      stifler_contact::Bool = true,
+                                      boundary::Symbol = :absorbing,
+                                      initial_infected::Union{Symbol, Vector{Int}} = :center,
+                                      rng_seed::Union{Int, Nothing} = nothing)
     lattice = create_square_lattice(width, height, boundary)
-    return create_maki_thompson_simulation(lattice, α, β;
-                                           stifler_contact   = stifler_contact,
-                                           initial_infected  = initial_infected,
-                                           rng_seed          = rng_seed)
+    return create_maki_thompson_process(lattice, α, β;
+                                        stifler_contact  = stifler_contact,
+                                        initial_infected = initial_infected,
+                                        rng_seed         = rng_seed)
 end

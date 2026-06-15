@@ -351,49 +351,36 @@ Create a complete Chase-escape simulation setup.
 # Example
 ```julia
 julia> lattice = create_square_lattice(100, 100, :absorbing)
-julia> ce = create_chase_escape_simulation(lattice, 2.0)
+julia> ce = create_chase_escape_process(lattice, 2.0)
 julia> results = run_simulation(ce)
 ```
 """
-function create_chase_escape_simulation(graph::AbstractEpidemicGraph,
-                                        λ::Float64, μ::Float64 = 1.0;
-                                        ghost::Bool = true,
-                                        initial_red::Union{Symbol, Vector{Int}} = :center,
-                                        initial_blue::Vector{Int} = Int[],
-                                        rng_seed::Union{Int, Nothing} = nothing)
+function create_chase_escape_process(graph::AbstractEpidemicGraph,
+                                     λ::Float64, μ::Float64 = 1.0;
+                                     ghost::Bool = true,
+                                     initial_red::Union{Symbol, Vector{Int}} = :center,
+                                     initial_blue::Vector{Int} = Int[],
+                                     rng_seed::Union{Int, Nothing} = nothing)
     rng     = create_rng(rng_seed)
     process = ChaseEscapeProcess(graph, λ, μ; ghost = ghost, rng = rng)
-
-    red_nodes = if initial_red == :center
-        if hasmethod(get_center_node, (typeof(graph),))
-            [get_center_node(graph)]
-        else
-            [num_nodes(graph) ÷ 2]
-        end
-    elseif initial_red == :random
-        [rand(rng, 1:num_nodes(graph))]
-    else
-        initial_red
-    end
-
-    reset!(process, red_nodes; initial_blue = initial_blue)
+    reset!(process, resolve_initial_nodes(graph, initial_red, rng); initial_blue = initial_blue)
     return process
 end
 
 """
-Convenience function for creating a Chase-escape simulation on a square lattice.
+Convenience overload for creating a Chase-Escape process on a square lattice.
 """
-function create_chase_escape_simulation(width::Int, height::Int,
-                                        λ::Float64, μ::Float64 = 1.0;
-                                        ghost::Bool = true,
-                                        boundary::Symbol = :absorbing,
-                                        initial_red::Union{Symbol, Vector{Int}} = :center,
-                                        initial_blue::Vector{Int} = Int[],
-                                        rng_seed::Union{Int, Nothing} = nothing)
+function create_chase_escape_process(width::Int, height::Int,
+                                     λ::Float64, μ::Float64 = 1.0;
+                                     ghost::Bool = true,
+                                     boundary::Symbol = :absorbing,
+                                     initial_red::Union{Symbol, Vector{Int}} = :center,
+                                     initial_blue::Vector{Int} = Int[],
+                                     rng_seed::Union{Int, Nothing} = nothing)
     lattice = create_square_lattice(width, height, boundary)
-    return create_chase_escape_simulation(lattice, λ, μ;
-                                          ghost        = ghost,
-                                          initial_red  = initial_red,
-                                          initial_blue = initial_blue,
-                                          rng_seed     = rng_seed)
+    return create_chase_escape_process(lattice, λ, μ;
+                                       ghost        = ghost,
+                                       initial_red  = initial_red,
+                                       initial_blue = initial_blue,
+                                       rng_seed     = rng_seed)
 end

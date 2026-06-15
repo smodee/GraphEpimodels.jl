@@ -84,7 +84,7 @@ Estimate survival probability using threading for maximum performance with minim
 # Examples
 ```julia
 # Simple ZIM analysis
-factory = () -> create_zim_simulation(100, 100, 2.0)
+factory = () -> create_zim_process(100, 100, 2.0)
 result = estimate_survival_probability(factory, [center_node])
 
 # With detailed data collection
@@ -92,7 +92,7 @@ result = estimate_survival_probability(factory, [center_node]; mode=DETAILED)
 
 # Custom factory with parameters
 λ, width, height = 2.5, 200, 200
-factory = () -> create_zim_simulation(width, height, λ; rng_seed=rand(UInt))
+factory = () -> create_zim_process(width, height, λ; rng_seed=rand(UInt))
 result = estimate_survival_probability(factory, [center_node]; num_simulations=10000)
 ```
 """
@@ -332,7 +332,7 @@ When CSV persistence is enabled, the function automatically continues from previ
 # Basic parameter sweep (all parameters use seeds 1-100)
 sweep = run_parameter_sweep(
     [1.5, 2.0, 2.5],
-    λ -> (() -> create_zim_simulation(100, 100, λ)),
+    λ -> (() -> create_zim_process(100, 100, λ)),
     [center_node];
     num_simulations = 100
 )
@@ -340,7 +340,7 @@ sweep = run_parameter_sweep(
 # With CSV persistence - automatically continues from previous runs
 sweep = run_parameter_sweep(
     [1.0:0.1:3.0...],
-    λ -> (() -> create_zim_simulation(200, 200, λ)),
+    λ -> (() -> create_zim_process(200, 200, λ)),
     [center_node];
     save_to = "zim_study.csv",
     num_simulations = 1000
@@ -457,12 +457,12 @@ function run_zim_lattice_survival_analysis(
 )::Dict{Symbol, Any}
     
     # Create factory generator for ZIM processes
-    factory_generator = λ -> (() -> create_zim_simulation(width, height, λ, mu))
+    factory_generator = λ -> (() -> create_zim_process(width, height, λ, mu))
     
     # Determine initial infected nodes
     if initial_location == :center
         # Create dummy process to get center node
-        dummy_process = create_zim_simulation(width, height, lambda_values[1], mu)
+        dummy_process = create_zim_process(width, height, lambda_values[1], mu)
         initial_infected = [get_center_node(get_graph(dummy_process))]
     elseif initial_location == :corner
         initial_infected = [1]  # Corner node

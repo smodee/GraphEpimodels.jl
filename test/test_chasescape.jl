@@ -21,14 +21,14 @@
         @test_throws ArgumentError ChaseEscapeProcess(g, 0.0, 1.0)
         @test_throws ArgumentError ChaseEscapeProcess(g, 1.0, -1.0)
         @test_throws ArgumentError ChaseEscapeProcess(g, 1.0, 0.0)
-        @test_throws ArgumentError create_chase_escape_simulation(g, 0.0)
+        @test_throws ArgumentError create_chase_escape_process(g, 0.0)
 
         # Red/blue seed sets must be disjoint.
-        @test_throws ArgumentError create_chase_escape_simulation(
+        @test_throws ArgumentError create_chase_escape_process(
             g, 1.0, 1.0; ghost = false, initial_red = [1], initial_blue = [1])
 
         # Out-of-range blue seed.
-        @test_throws ArgumentError create_chase_escape_simulation(
+        @test_throws ArgumentError create_chase_escape_process(
             g, 1.0, 1.0; ghost = false, initial_red = [1], initial_blue = [99])
     end
 
@@ -37,7 +37,7 @@
 
         # Single red seed, ghost on: the ghost makes the seed catchable but is
         # never placed in the graph (so REMOVED count stays 0).
-        p = create_chase_escape_simulation(g, 2.0, 1.0; ghost = true, initial_red = [1])
+        p = create_chase_escape_process(g, 2.0, 1.0; ghost = true, initial_red = [1])
         st = get_chase_escape_statistics(p)
         @test st[:infected] == 1
         @test st[:removed]  == 0          # ghost is not a real node
@@ -47,7 +47,7 @@
         @test is_active(p)
 
         # ghost = false with an explicit blue seed adjacent to the red seed.
-        p2 = create_chase_escape_simulation(
+        p2 = create_chase_escape_process(
             g, 2.0, 1.0; ghost = false, initial_red = [2], initial_blue = [1])
         st2 = get_chase_escape_statistics(p2)
         @test st2[:infected] == 1
@@ -56,7 +56,7 @@
         @test is_active(p2)
 
         # ghost = false with no blue seeds warns (degenerate pure-growth regime).
-        @test_logs (:warn,) match_mode=:any create_chase_escape_simulation(
+        @test_logs (:warn,) match_mode=:any create_chase_escape_process(
             g, 2.0, 1.0; ghost = false, initial_red = [1])
     end
 
@@ -66,7 +66,7 @@
         #                    node 1 has no white neighbour (2 is red)  => 0
         #   catch_boundary : nodes 1 and 2 each carry a ghost (+1)     => 2
         g = create_path_graph(5)
-        p = create_chase_escape_simulation(g, 1.5, 1.0; ghost = true, initial_red = [1, 2])
+        p = create_chase_escape_process(g, 1.5, 1.0; ghost = true, initial_red = [1, 2])
         st = get_chase_escape_statistics(p)
         @test st[:spread_boundary] == 1
         @test st[:catch_boundary]  == 2
@@ -76,7 +76,7 @@
     @testset "Spread event bookkeeping" begin
         # [R, W, W, W, W]; spread from node 1 must convert node 2.
         g = create_path_graph(5)
-        p = create_chase_escape_simulation(g, 1.0, 1.0; ghost = true, initial_red = [1])
+        p = create_chase_escape_process(g, 1.0, 1.0; ghost = true, initial_red = [1])
         GraphEpimodels._ce_spread!(p, 1)
 
         @test get_node_state(g, 2) == INFECTED
@@ -94,7 +94,7 @@
         # [R, R, W, W, W]; catching node 1 turns it blue and increments the catch
         # weight of its red neighbour (node 2).
         g = create_path_graph(5)
-        p = create_chase_escape_simulation(g, 1.0, 1.0; ghost = true, initial_red = [1, 2])
+        p = create_chase_escape_process(g, 1.0, 1.0; ghost = true, initial_red = [1, 2])
         GraphEpimodels._ce_catch!(p, 1)
 
         @test get_node_state(g, 1) == REMOVED
@@ -113,7 +113,7 @@
     end
 
     @testset "Monotonicity & conservation" begin
-        p = create_chase_escape_simulation(15, 15, 3.0; rng_seed = 7)
+        p = create_chase_escape_process(15, 15, 3.0; rng_seed = 7)
         g = get_graph(p)
         n = num_nodes(g)
         states = node_states_raw(g)
@@ -139,11 +139,11 @@
     end
 
     @testset "Determinism" begin
-        p1 = create_chase_escape_simulation(20, 20, 2.5; rng_seed = 123)
+        p1 = create_chase_escape_process(20, 20, 2.5; rng_seed = 123)
         run_simulation(p1)
         s1 = get_chase_escape_statistics(p1)
 
-        p2 = create_chase_escape_simulation(20, 20, 2.5; rng_seed = 123)
+        p2 = create_chase_escape_process(20, 20, 2.5; rng_seed = 123)
         run_simulation(p2)
         s2 = get_chase_escape_statistics(p2)
 
@@ -155,7 +155,7 @@
 
     @testset "Edge cases" begin
         # Single-node lattice: only a ghost-catch is possible.
-        p = create_chase_escape_simulation(1, 1, 2.0; ghost = true)
+        p = create_chase_escape_process(1, 1, 2.0; ghost = true)
         g = get_graph(p)
         @test num_nodes(g) == 1
         @test is_active(p)                 # ghost makes the lone red catchable
@@ -167,7 +167,7 @@
 
         # Red seed with no white neighbours but an explicit blue neighbour.
         g2 = create_path_graph(2)
-        p2 = create_chase_escape_simulation(
+        p2 = create_chase_escape_process(
             g2, 2.0, 1.0; ghost = false, initial_red = [1], initial_blue = [2])
         @test is_active(p2)
         run_simulation(p2)

@@ -23,7 +23,7 @@ network_graphs() = [
 
 # An SIR process on a graph, infected starting from node 1 (deterministic and
 # valid for every graph type, including those without a center node).
-sir_on(g) = create_sir_simulation(g, 0.6, 1.0; initial_infected = [1], rng_seed = 1)
+sir_on(g) = create_sir_process(g, 0.6, 1.0; initial_infected = [1], rng_seed = 1)
 
 @testset "visualization" begin
 

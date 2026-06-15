@@ -273,7 +273,7 @@ end
 # =============================================================================
 
 """
-Create a complete SIR simulation setup.
+Create a configured SIR process ready to run.
 
 # Arguments
 - `graph::AbstractEpidemicGraph`: The graph to simulate on
@@ -288,39 +288,26 @@ Create a complete SIR simulation setup.
 # Example
 ```julia
 julia> lattice = create_square_lattice(100, 100, :absorbing)
-julia> sir = create_sir_simulation(lattice, 0.5)
+julia> sir = create_sir_process(lattice, 0.5)
 julia> results = run_simulation(sir; max_time=100.0)
 ```
 """
-function create_sir_simulation(graph::AbstractEpidemicGraph, β::Float64, γ::Float64 = 1.0;
-                               initial_infected::Union{Symbol, Vector{Int}} = :center,
-                               rng_seed::Union{Int, Nothing} = nothing)
+function create_sir_process(graph::AbstractEpidemicGraph, β::Float64, γ::Float64 = 1.0;
+                            initial_infected::Union{Symbol, Vector{Int}} = :center,
+                            rng_seed::Union{Int, Nothing} = nothing)
     rng = create_rng(rng_seed)
     process = SIRProcess(graph, β, γ; rng=rng)
-
-    infected_nodes = if initial_infected == :center
-        if isdefined(graph, :get_center_node) || hasmethod(get_center_node, (typeof(graph),))
-            [get_center_node(graph)]
-        else
-            [num_nodes(graph) ÷ 2]
-        end
-    elseif initial_infected == :random
-        [rand(rng, 1:num_nodes(graph))]
-    else
-        initial_infected
-    end
-
-    reset!(process, infected_nodes)
+    reset!(process, resolve_initial_nodes(graph, initial_infected, rng))
     return process
 end
 
 """
-Convenience function for creating SIR on square lattices.
+Convenience overload for creating an SIR process on a square lattice.
 """
-function create_sir_simulation(width::Int, height::Int, β::Float64, γ::Float64 = 1.0;
-                               boundary::Symbol = :absorbing,
-                               initial_infected::Union{Symbol, Vector{Int}} = :center,
-                               rng_seed::Union{Int, Nothing} = nothing)
+function create_sir_process(width::Int, height::Int, β::Float64, γ::Float64 = 1.0;
+                            boundary::Symbol = :absorbing,
+                            initial_infected::Union{Symbol, Vector{Int}} = :center,
+                            rng_seed::Union{Int, Nothing} = nothing)
     lattice = create_square_lattice(width, height, boundary)
-    return create_sir_simulation(lattice, β, γ; initial_infected=initial_infected, rng_seed=rng_seed)
+    return create_sir_process(lattice, β, γ; initial_infected=initial_infected, rng_seed=rng_seed)
 end

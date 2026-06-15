@@ -33,7 +33,7 @@ JSON serialization.
 
 # Example
 ```julia
-zim = create_zim_simulation(100, 100, 2.0, 1.0)
+zim = create_zim_process(100, 100, 2.0, 1.0)
 info = extract_process_info(zim)
 # Returns: Dict("process_type" => "ZIMProcess", "lambda" => 2.0, ...)
 ```
