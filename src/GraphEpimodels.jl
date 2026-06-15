@@ -68,7 +68,7 @@ export count_states, get_nodes_in_state, count_neighbors_by_state
 export get_active_edges
 
 # Geometry interface (consumed by visualization)
-export has_layout, layout_dim, node_positions, has_cells, cell_polygons
+export supported_layout_dims, has_layout, layout_dim, node_positions, has_cells, cell_polygons
 
 # Square lattice implementation
 include("graphs/lattice.jl")
@@ -103,7 +103,7 @@ export CycleGraph, create_cycle_graph
 include("graphs/star.jl")
 export StarGraph, create_star_graph
 include("graphs/regular_tree.jl")
-export RegularTree, create_regular_tree
+export RegularTree, create_regular_tree, create_dary_tree
 
 # =============================================================================
 # Epidemic Process Framework

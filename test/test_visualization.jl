@@ -72,10 +72,50 @@ sir_on(g) = create_sir_process(g, 0.6, 1.0; initial_infected = [1], rng_seed = 1
     end
 
     @testset "node_positions shape" begin
-        # Every graph type that reports a layout returns a 2 × N matrix.
+        # Every graph type that reports a layout returns a 2 × N matrix by default.
         for (_, g) in vcat(lattice_graphs(), network_graphs())
             has_layout(g) || continue
             @test size(node_positions(g)) == (2, num_nodes(g))
+        end
+    end
+
+    @testset "layout dimensions" begin
+        # Default (preferred) dim is 2 for every type that has a layout, so the
+        # 2D rendering path is unchanged.
+        for (_, g) in vcat(lattice_graphs(), network_graphs())
+            has_layout(g) || continue
+            @test layout_dim(g) == 2
+            @test 2 in supported_layout_dims(g)
+        end
+
+        # Lattices, cycle and path are planar-only: they advertise dim 2 only and
+        # reject a 3D request rather than returning wrong coordinates.
+        for (_, g) in vcat(lattice_graphs(),
+                           [("cycle", create_cycle_graph(8)), ("path", create_path_graph(5))])
+            @test supported_layout_dims(g) == (2,)
+            @test_throws ArgumentError node_positions(g; dim = 3)
+        end
+
+        # Star / complete / tree carry a closed-form 3D layout (3 × N). Both tree
+        # conventions advertise (2, 3); detailed tree geometry is checked in
+        # test_regular_tree.jl.
+        for (_, g) in [("star", create_star_graph(7)),
+                       ("complete", create_complete_graph(6)),
+                       ("dary-tree", create_dary_tree(2, 4)),
+                       ("regular-tree", create_regular_tree(3, 3))]
+            @test supported_layout_dims(g) == (2, 3)
+            p3 = node_positions(g; dim = 3)
+            @test size(p3) == (3, num_nodes(g))
+        end
+    end
+
+    @testset "3D layout geometry" begin
+        # Star: center at origin, every leaf on the unit sphere.
+        star = create_star_graph(9)
+        p = node_positions(star; dim = 3)
+        @test all(iszero, p[:, 1])
+        for i in 2:num_nodes(star)
+            @test isapprox(hypot(p[1, i], p[2, i], p[3, i]), 1.0; atol = 1e-9)
         end
     end
 
@@ -130,6 +170,33 @@ sir_on(g) = create_sir_process(g, 0.6, 1.0; initial_infected = [1], rng_seed = 1
                                    sampler = EveryStep(), max_steps = 20,
                                    filename = file, visualizer = NetworkVisualizer())
                 @test isfile(file) && filesize(file) > 0
+            end
+
+            # 3D node-link: static render + save (star sphere) and a turntable
+            # animation (tree shells), covering the Axis3 draw path end to end.
+            @testset "3D static render + save" begin
+                g = create_star_graph(8)
+                fig = render_frame(NetworkVisualizer(dim = 3), g, node_states_raw(g))
+                @test fig isa Figure
+                file = joinpath(dir, "star_3d.png")
+                save_plot(sir_on(g), file; dim = 3)
+                @test isfile(file) && filesize(file) > 0
+            end
+
+            @testset "3D turntable animation" begin
+                file = joinpath(dir, "tree_3d.gif")
+                rec = animate_simulation(sir_on(create_dary_tree(2, 4));
+                                         sampler = EveryStep(), max_steps = 20,
+                                         filename = file, dim = 3, turntable = true)
+                @test rec isa SimulationRecording
+                @test isfile(file) && filesize(file) > 0
+            end
+
+            # A lattice has no 3D layout: requesting dim=3 is a clear error, not a
+            # silently-wrong drawing.
+            @testset "lattice rejects dim=3" begin
+                @test_throws ArgumentError save_plot(sir_on(create_square_lattice(4, 4)),
+                                                     joinpath(dir, "nope.png"); dim = 3)
             end
         end
     end

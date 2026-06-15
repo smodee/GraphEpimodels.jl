@@ -221,37 +221,99 @@ end
 # computed layout.
 
 """
-Whether the graph carries an intrinsic (or attached) spatial layout.
+The intrinsic layout dimensions a graph type can produce, as a tuple of `Int`s.
 
-Default: `false`. Lattices return `true`; an `AdjacencyGraph` returns `true`
-only when node coordinates have been attached.
+This is the primary geometry-capability query: it lists every dimension `d` for
+which the type knows a *closed-form* embedding, in preference order (so the first
+entry is the "natural" one). Examples:
+
+- `()`            — no intrinsic layout (e.g. a bare `AdjacencyGraph`); the
+  visualizer falls back to a force-directed layout in whatever dimension it draws.
+- `(2,)`          — a planar-only layout (lattices, cycle, path).
+- `(2, 3)`        — both a 2D and a 3D closed-form layout (star, complete, tree).
+
+A type advertises a dimension here *only* when it has a meaningful built-in
+embedding for it. "Can it be drawn in 3D at all?" is a different (and almost
+always `true`) question answered by the force-directed fallback, not by this.
+
+Default: `()`. `has_layout` and `layout_dim` are derived from this.
 """
-function has_layout(graph::AbstractEpidemicGraph)::Bool
-    return false
+function supported_layout_dims(graph::AbstractEpidemicGraph)::Tuple{Vararg{Int}}
+    return ()
 end
 
 """
-Dimensionality of the node layout (2 or 3); `0` when there is no layout.
+Whether the graph carries an intrinsic (or attached) spatial layout.
 
-Default: `0`. 2D graphs return `2`; this becomes `3` for future 3D graphs with
-no change to the rest of the interface.
+Derived from [`supported_layout_dims`](@ref): `true` iff the graph advertises at
+least one intrinsic layout dimension. Lattices and the structured graphs return
+`true`; an `AdjacencyGraph` returns `true` only when node coordinates have been
+attached.
+"""
+has_layout(graph::AbstractEpidemicGraph)::Bool = !isempty(supported_layout_dims(graph))
+
+"""
+The *preferred* layout dimension (2 or 3); `0` when there is no layout.
+
+Derived from [`supported_layout_dims`](@ref) as its first entry — the dimension
+used when `node_positions` is called without an explicit `dim`. 2D graphs return
+`2`; a graph whose natural embedding is 3D returns `3`.
 """
 function layout_dim(graph::AbstractEpidemicGraph)::Int
-    return 0
+    dims = supported_layout_dims(graph)
+    return isempty(dims) ? 0 : first(dims)
+end
+
+"""
+Validate that `dim` is one of the graph's [`supported_layout_dims`](@ref).
+
+Concrete `node_positions` methods call this first so an unsupported `dim` gives a
+clear error instead of silently wrong coordinates.
+"""
+@inline function _check_layout_dim(graph::AbstractEpidemicGraph, dim::Int)
+    dim in supported_layout_dims(graph) && return nothing
+    throw(ArgumentError(
+        "$(typeof(graph)) supports layout dims $(supported_layout_dims(graph)); got dim=$dim"))
 end
 
 """
 Node coordinates as a `dim × N` matrix (column `i` is the position of node `i`).
 
-Using `dim × N` (rather than `N × dim`) keeps each node's coordinates
-contiguous in Julia's column-major storage and makes the 3D extension a pure
-shape change (`2 × N` → `3 × N`).
+`dim` selects which intrinsic layout to produce and must be one of the graph's
+[`supported_layout_dims`](@ref); it defaults to the preferred [`layout_dim`](@ref).
+Using `dim × N` (rather than `N × dim`) keeps each node's coordinates contiguous
+in Julia's column-major storage, so a 2D vs 3D layout is just a different row
+count (`2 × N` vs `3 × N`).
 
-No default: graphs that report `has_layout() == true` must implement this.
+No default: graphs that report a non-empty `supported_layout_dims` must implement this.
 """
-function node_positions(graph::AbstractEpidemicGraph)::Matrix{Float64}
+function node_positions(graph::AbstractEpidemicGraph;
+                        dim::Int = layout_dim(graph))::Matrix{Float64}
     error("node_positions must be implemented by graph type $(typeof(graph)) " *
-          "that reports has_layout() == true")
+          "that reports a non-empty supported_layout_dims()")
+end
+
+"""
+Evenly distributed points on the unit sphere via the golden-angle (Fibonacci)
+spiral. Returns a `3 × n` matrix whose columns are unit vectors.
+
+Shared by the closed-form 3D layouts (star sphere, complete-graph sphere, and the
+per-level shells of a tree). The spiral spaces points near-uniformly for any `n`,
+avoiding the clustering of naive lat/long grids.
+"""
+function _fibonacci_sphere(n::Int)::Matrix{Float64}
+    pos = Matrix{Float64}(undef, 3, n)
+    n == 0 && return pos
+    golden = π * (3 - sqrt(5))            # golden angle ≈ 2.39996 rad
+    @inbounds for i in 0:(n - 1)
+        y = 1 - 2 * (i + 0.5) / n          # y from ~+1 down to ~-1
+        r = sqrt(max(0.0, 1 - y * y))      # circle radius at height y
+        θ = golden * i
+        pos[1, i + 1] = r * cos(θ)
+        pos[2, i + 1] = y
+        pos[3, i + 1] = r * sin(θ)
+    end
+    return pos
 end
 
 """

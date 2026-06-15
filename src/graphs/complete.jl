@@ -119,15 +119,16 @@ end
 # =============================================================================
 #
 # A complete graph has no intrinsic embedding, but the conventional drawing places
-# the nodes evenly on a circle so every edge is visible. Providing this gives a
-# deterministic layout instead of falling back to a computed (force-directed) one.
-# It is not a space-filling tiling, so it supplies no cells.
+# the nodes evenly on a circle (2D) or sphere (3D) so connections spread out. This
+# gives a deterministic layout instead of falling back to a computed (force-directed)
+# one. It is not a space-filling tiling, so it supplies no cells.
 
-has_layout(::CompleteGraph)::Bool = true
-layout_dim(::CompleteGraph)::Int = 2
+supported_layout_dims(::CompleteGraph)::Tuple{Vararg{Int}} = (2, 3)
 
-function node_positions(graph::CompleteGraph)::Matrix{Float64}
+function node_positions(graph::CompleteGraph; dim::Int = 2)::Matrix{Float64}
+    _check_layout_dim(graph, dim)
     n = graph.n_nodes
+    dim == 3 && return _fibonacci_sphere(n)   # all nodes on the unit sphere
     pos = Matrix{Float64}(undef, 2, n)
     @inbounds for idx in 1:n
         θ = 2π * (idx - 1) / n

@@ -124,12 +124,15 @@ end
 # It never fills space with cells, so the visualizer draws it as a node-link
 # diagram (markers + edges), computing a layout when none is attached.
 
-has_layout(graph::AdjacencyGraph)::Bool = graph.coords !== nothing
-layout_dim(graph::AdjacencyGraph)::Int = graph.coords === nothing ? 0 : size(graph.coords, 1)
+# The intrinsic dims are exactly the dimension of the attached coordinates (2 or
+# 3), or none when no coordinates have been attached.
+supported_layout_dims(graph::AdjacencyGraph)::Tuple{Vararg{Int}} =
+    graph.coords === nothing ? () : (size(graph.coords, 1),)
 
-function node_positions(graph::AdjacencyGraph)::Matrix{Float64}
+function node_positions(graph::AdjacencyGraph; dim::Int = layout_dim(graph))::Matrix{Float64}
     graph.coords === nothing &&
         error("AdjacencyGraph has no attached coordinates; has_layout() is false")
+    _check_layout_dim(graph, dim)
     return graph.coords
 end
 
