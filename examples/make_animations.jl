@@ -2,8 +2,9 @@
 """
 Generate example animations for each epidemic model in GraphEpimodels.jl.
 
-Run from the project root:
-    julia --project examples/make_animations.jl
+Run from the project root (the examples environment bundles CairoMakie, which
+GraphEpimodels needs for plotting/animation via its package extension):
+    julia --project=examples examples/make_animations.jl
 
 Produces one GIF per model in this directory (examples/). Each animation uses
 `TimeInterval` (sample-and-hold) sampling so playback is faithful to simulation
@@ -18,6 +19,7 @@ certain, so the examples are reliably interesting.
 """
 
 using GraphEpimodels
+using CairoMakie   # activates the plotting/animation extension
 
 const OUTDIR = @__DIR__
 const TARGET_FRAMES = 120

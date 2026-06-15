@@ -14,8 +14,9 @@ In each transparent PNG the susceptible cells carry alpha=0, so they are absent
 from the image. Open in any viewer that shows alpha (e.g. browser, Preview on
 macOS, IrfanView on Windows) to confirm susceptibles are truly transparent.
 
-Run from the project root:
-    julia --project examples/transparent_demo.jl
+Run from the project root (the examples environment bundles CairoMakie, which
+GraphEpimodels needs for plotting via its package extension):
+    julia --project=examples examples/transparent_demo.jl
 """
 
 using GraphEpimodels

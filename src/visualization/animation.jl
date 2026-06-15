@@ -1,10 +1,16 @@
 """
-Animated visualization of epidemic processes on square lattices.
+Recording of epidemic processes for animated visualization.
 
 The performance-optimized Gillespie loop (`step!`) is left untouched. Instead, a
-dedicated runner replays it while capturing lightweight `Vector{Int8}` state
-snapshots according to a pluggable *frame sampler*, then renders the snapshots
-into an animated GIF using the existing `LatticeVisualizer` heatmap.
+dedicated runner (`record_simulation`) replays it while capturing lightweight
+`Vector{Int8}` state snapshots according to a pluggable *frame sampler*. The
+captured `SimulationRecording` is then rendered into a GIF/MP4 by
+`animate_recording` / `animate_simulation`.
+
+This file holds the backend-independent recording machinery (frame samplers,
+`SimulationRecording`, `record_simulation`). The Makie rendering
+(`animate_recording`, `animate_simulation`) lives in
+ext/GraphEpimodelsCairoMakieExt.jl and loads with `using CairoMakie`.
 
 Two sampling regimes (see `FrameSampler`):
 - `TimeInterval(dt)` — equal simulation-time spacing; faithful temporal playback,
@@ -13,13 +19,9 @@ Two sampling regimes (see `FrameSampler`):
 - `EveryStep()`      — one frame per transition; best for small lattices where
   every single event is interesting.
 
-Output format follows the filename extension: `.gif` or `.mp4` both work via the
-Makie/CairoMakie `record` backend. Works for any graph type — lattices render as
-dual-tiling cells, general graphs as node-link diagrams — via `visualizer_for`.
-
 # Example
 ```julia
-using GraphEpimodels
+using GraphEpimodels, CairoMakie   # CairoMakie enables animate_*
 
 # Small lattice — animate every transition
 sir = create_sir_simulation(30, 30, 0.6, 1.0; initial_infected=:center, rng_seed=1)
@@ -30,8 +32,6 @@ big = create_sir_simulation(200, 200, 0.6, 1.0; initial_infected=:center, rng_se
 animate_simulation(big; sampler=TimeInterval(0.5), max_time=40.0, filename="sir_large.mp4")
 ```
 """
-
-using CairoMakie
 
 # =============================================================================
 # Frame Samplers — decide *when* a snapshot is captured
@@ -264,146 +264,4 @@ function record_simulation(process::AbstractEpidemicProcess;
     end
 
     return SimulationRecording(graph, frames, times, steps, counts, _process_name(process))
-end
-
-# =============================================================================
-# Animation Builder
-# =============================================================================
-
-# Draw one recorded frame into an existing axis, dispatched on visualizer type.
-# Reuses the same drawing cores as the static `render_frame`, so animation frames
-# look identical to static snapshots.
-_draw_frame!(ax, viz::LatticeVisualizer, graph, states; positions = nothing) =
-    _draw_lattice!(ax, viz, graph, states)
-_draw_frame!(ax, viz::NetworkVisualizer, graph, states; positions = nothing) =
-    _draw_network!(ax, viz, graph, states; positions = positions)
-
-"""Fixed drawing limits (with margin) so the view doesn't jitter between frames."""
-function _frame_limits(positions::Matrix{Float64})
-    xlo, xhi = extrema(@view positions[1, :])
-    ylo, yhi = extrema(@view positions[2, :])
-    mx = 0.05 * (xhi - xlo) + 1.0
-    my = 0.05 * (yhi - ylo) + 1.0
-    return (xlo - mx, xhi + mx, ylo - my, yhi + my)
-end
-
-"""
-Render a recording to an animated GIF or MP4 (format from the extension).
-
-Each frame is drawn with the same drawing core used by `visualize_state`, so
-frames look identical to static snapshots. The visualizer is chosen by graph type
-via `visualizer_for`, so this works for square / triangular / hexagonal lattices
-and for general (adjacency) graphs alike.
-
-# Arguments
-- `rec::SimulationRecording`: The recording to animate
-- `color_scheme::Symbol`: Color scheme (default: `:sir`)
-- `fps::Int`: Frames per second of the output (default: 15)
-- `filename::String`: Output path; `.gif` or `.mp4` (default: "simulation.gif")
-- `figure_size::Tuple{Int, Int}`: Frame size in pixels (default: (600, 600))
-- `show_boundary::Bool`: Outline the lattice boundary (lattices only; default: false)
-- `show_grid::Bool`: Stroke cell outlines (cell lattices only; default: false)
-
-# Returns
-- `String`: The output filename.
-"""
-function animate_recording(rec::SimulationRecording;
-                           color_scheme::Symbol = :sir,
-                           fps::Int = 15,
-                           filename::String = "simulation.gif",
-                           figure_size::Tuple{Int, Int} = (600, 600),
-                           show_boundary::Bool = false,
-                           show_grid::Bool = false)
-    graph = rec.graph
-    viz = visualizer_for(graph; color_scheme = color_scheme, figure_size = figure_size)
-    if viz isa LatticeVisualizer
-        viz.show_boundary = show_boundary
-        viz.show_grid = show_grid
-    end
-
-    # A general (node-link) graph gets a single fixed layout so nodes don't move
-    # between frames; lattices use their intrinsic node positions.
-    positions = viz isa NetworkVisualizer ? _resolve_positions(graph) :
-                node_positions(graph)
-    xlo, xhi, ylo, yhi = _frame_limits(positions)
-
-    fig = Figure(size = figure_size)
-    ax = Axis(fig[1, 1]; aspect = DataAspect())
-    hidedecorations!(ax)
-    hidespines!(ax)
-    limits!(ax, xlo, xhi, ylo, yhi)
-
-    layout_pos = viz isa NetworkVisualizer ? positions : nothing
-    n = num_frames(rec)
-    record(fig, filename, 1:n; framerate = fps) do idx
-        empty!(ax)
-        ax.title = _frame_title(rec, idx)
-        _draw_frame!(ax, viz, graph, rec.frames[idx]; positions = layout_pos)
-    end
-
-    println("Animation saved to: $filename ($n frames, $fps fps)")
-    return filename
-end
-
-# =============================================================================
-# Convenience API — run, record, and save in one call
-# =============================================================================
-
-"""
-Run a process and save an animated GIF of its evolution in one call.
-
-Records the run with `record_simulation` and renders it with `animate_recording`.
-
-Returns the `SimulationRecording` so the animation can be re-rendered at a
-different fps / color scheme without re-simulating:
-```julia
-rec = animate_simulation(sir; filename="run.gif")
-animate_recording(rec; fps=30, color_scheme=:medical, filename="run_fast.gif")
-```
-
-Runs from the process's *current* state (like `run_simulation`); pass a freshly
-created `create_*_simulation(...)` process for a clean run.
-
-# Arguments
-- `process::AbstractEpidemicProcess`: The process to run and animate
-- `sampler::FrameSampler`: When to capture frames (default: `TimeInterval(1.0)`)
-- `max_time::Float64`: Stop at this simulation time (default: `Inf`)
-- `max_steps::Int`: Stop after this many steps (default: `typemax(Int)`)
-- `stop_on_escape::Bool`: Stop once infection reaches the boundary (default: false)
-- `color_scheme::Symbol`: Color scheme (default: `:sir`)
-- `fps::Int`: Frames per second of the output GIF (default: 15)
-- `filename::String`: Output path (default: "simulation.gif")
-- `figure_size::Tuple{Int, Int}`: Frame size in pixels (default: (600, 600))
-- `show_boundary::Bool`: Highlight the lattice boundary (default: false)
-- `show_grid::Bool`: Show grid lines between nodes (default: false)
-
-# Returns
-- `SimulationRecording`
-"""
-function animate_simulation(process::AbstractEpidemicProcess;
-                            sampler::FrameSampler = TimeInterval(1.0),
-                            max_time::Float64 = Inf,
-                            max_steps::Int = typemax(Int),
-                            stop_on_escape::Bool = false,
-                            color_scheme::Symbol = :sir,
-                            fps::Int = 15,
-                            filename::String = "simulation.gif",
-                            figure_size::Tuple{Int, Int} = (600, 600),
-                            show_boundary::Bool = false,
-                            show_grid::Bool = false)::SimulationRecording
-    rec = record_simulation(process;
-                            sampler = sampler,
-                            max_time = max_time,
-                            max_steps = max_steps,
-                            stop_on_escape = stop_on_escape)
-
-    animate_recording(rec;
-                      color_scheme = color_scheme,
-                      fps = fps,
-                      filename = filename,
-                      figure_size = figure_size,
-                      show_boundary = show_boundary,
-                      show_grid = show_grid)
-
-    return rec
 end
