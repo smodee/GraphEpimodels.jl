@@ -92,7 +92,7 @@ end
 # absent from the output, giving real per-cell transparency.
 function _draw_lattice!(ax, viz::LatticeVisualizer, lattice::SquareLattice,
                         states_raw::Vector{Int8}; transparent_background::Bool = false)
-    width, height = lattice.width, lattice.height
+    width, height = lattice.dims[1], lattice.dims[2]
     cS, cI, cR = _state_colors(viz.color_scheme;
                                transparent_background = transparent_background)
     palette = (cS, cI, cR)
@@ -181,9 +181,11 @@ ignored for node-link graphs.
 - `transparent_background::Bool`: Transparent background + susceptible cells (lattices only; default: false)
 - `show_boundary::Bool`: Outline the lattice boundary (lattices only; default: false)
 - `show_grid::Bool`: Stroke cell outlines (cell lattices only; default: false)
-- `dim::Int`: Drawing dimension, 2 or 3 (node-link graphs only; default: 2). `dim = 3`
-  draws the graph in 3D — an intrinsic 3D layout where available (star / complete /
-  tree), otherwise a 3D force-directed layout. Lattices support 2D only.
+- `dim::Union{Int, Nothing}`: Drawing dimension, 2 or 3 (node-link graphs only).
+  Default `nothing` picks the graph's natural dimension — 3D for graphs with a 3D
+  layout (`CubeLattice`), 2D otherwise. `dim = 3` forces 3D — an intrinsic 3D layout
+  where available (cube / star / complete / tree), else a 3D force-directed layout.
+  Cell lattices (square / triangular / hexagonal) render in 2D only.
 """
 function GraphEpimodels.save_plot(process::AbstractEpidemicProcess, filename::String;
                                           color_scheme::Union{Symbol, Nothing} = nothing,
@@ -191,18 +193,18 @@ function GraphEpimodels.save_plot(process::AbstractEpidemicProcess, filename::St
                                           transparent_background::Bool = false,
                                           show_boundary::Bool = false,
                                           show_grid::Bool = false,
-                                          dim::Int = 2)
+                                          dim::Union{Int, Nothing} = nothing)
     scheme = color_scheme === nothing ? default_color_scheme(process) : color_scheme
     graph = get_graph(process)
     viz = visualizer_for(graph; color_scheme = scheme, figure_size = figure_size)
     if viz isa LatticeVisualizer
-        dim == 2 || throw(ArgumentError(
-            "$(typeof(graph)) renders in 2D only (got dim=$dim); lattices have no 3D layout"))
+        something(dim, 2) == 2 || throw(ArgumentError(
+            "$(typeof(graph)) renders in 2D only (got dim=$dim); cell lattices have no 3D layout"))
         viz.show_boundary = show_boundary
         viz.show_grid = show_grid
         fig = visualize_state(viz, process; transparent_background = transparent_background)
     else
-        viz.dim = dim
+        viz.dim = _resolve_draw_dim(graph, dim)
         fig = visualize_state(viz, process)
     end
     save(filename, fig)
@@ -213,6 +215,13 @@ end
 # =============================================================================
 # Network rendering
 # =============================================================================
+
+# Resolve the node-link drawing dimension: an explicit `dim` wins; `nothing` picks
+# the graph's natural dimension — 3 when it has a 3D layout (CubeLattice), else 2.
+# `layout_dim` is 3 for a 3D-native graph, 2 for a 2D one, and 0 when there's no
+# intrinsic layout; clamping maps that 0 (spring-layout fallback) to 2.
+_resolve_draw_dim(graph, dim::Union{Int, Nothing}) =
+    something(dim, clamp(layout_dim(graph), 2, 3))
 
 """
 Resolve node positions for a graph in `dim` dimensions (2 or 3). Returns a
@@ -373,10 +382,12 @@ node-link diagram.
 - `figure_size::Tuple{Int, Int}`: Frame size in pixels (default: (600, 600))
 - `show_boundary::Bool`: Outline the lattice boundary (lattices only; default: false)
 - `show_grid::Bool`: Stroke cell outlines (cell lattices only; default: false)
-- `dim::Int`: Drawing dimension, 2 or 3 (node-link graphs only; default: 2). `dim = 3`
-  draws an intrinsic 3D layout where available (star / complete / tree), else a 3D
-  force-directed one. Ignored when an explicit `visualizer` is supplied (it carries
-  its own `dim`). Lattices support 2D only.
+- `dim::Union{Int, Nothing}`: Drawing dimension, 2 or 3 (node-link graphs only).
+  Default `nothing` picks the graph's natural dimension — 3D for graphs with a 3D
+  layout (`CubeLattice`), 2D otherwise. `dim = 3` forces an intrinsic 3D layout where
+  available (cube / star / complete / tree), else a 3D force-directed one. Ignored
+  when an explicit `visualizer` is supplied (it carries its own `dim`). Cell lattices
+  render in 2D only.
 - `turntable::Bool`: For 3D animations, slowly rotate the camera one full turn over
   the clip (default: false). No effect in 2D.
 - `visualizer::Union{AbstractVisualizer, Nothing}`: Override the auto-selected
@@ -394,7 +405,7 @@ function GraphEpimodels.animate_recording(rec::SimulationRecording;
                                           show_grid::Bool = false,
                                           show_title::Bool = true,
                                           transparent_background::Bool = false,
-                                          dim::Int = 2,
+                                          dim::Union{Int, Nothing} = nothing,
                                           turntable::Bool = false,
                                           visualizer::Union{AbstractVisualizer, Nothing} = nothing)
     graph = rec.graph
@@ -402,10 +413,10 @@ function GraphEpimodels.animate_recording(rec::SimulationRecording;
         scheme = color_scheme === nothing ? default_color_scheme(rec.process_name) : color_scheme
         viz = visualizer_for(graph; color_scheme = scheme, figure_size = figure_size)
         if viz isa NetworkVisualizer
-            viz.dim = dim
-        elseif dim != 2
+            viz.dim = _resolve_draw_dim(graph, dim)
+        elseif something(dim, 2) != 2
             throw(ArgumentError(
-                "$(typeof(graph)) renders in 2D only (got dim=$dim); lattices have no 3D layout"))
+                "$(typeof(graph)) renders in 2D only (got dim=$dim); cell lattices have no 3D layout"))
         end
     else
         viz = visualizer
@@ -487,7 +498,7 @@ function GraphEpimodels.animate_simulation(process::AbstractEpidemicProcess;
                                            show_grid::Bool = false,
                                            show_title::Bool = true,
                                            transparent_background::Bool = false,
-                                           dim::Int = 2,
+                                           dim::Union{Int, Nothing} = nothing,
                                            turntable::Bool = false,
                                            visualizer::Union{AbstractVisualizer, Nothing} = nothing)::SimulationRecording
     rec = record_simulation(process;

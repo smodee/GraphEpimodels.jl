@@ -47,7 +47,12 @@ function supported_graph_types(viz::LatticeVisualizer)::Vector{Type}
     return [SquareLattice, TriangularLattice, HexagonalLattice]
 end
 
-can_visualize(viz::LatticeVisualizer, graph::AbstractLatticeGraph)::Bool = true
+# The LatticeVisualizer draws dual-tiling cells, so it can handle a lattice only
+# if that lattice actually supplies a cell tiling. A cell-less lattice (3D cube,
+# d≥4 hypercubic) is routed to the NetworkVisualizer by `visualizer_for`; this
+# guard turns a forced mismatch into a clear error instead of a `cell_polygons`
+# failure deep in rendering.
+can_visualize(viz::LatticeVisualizer, graph::AbstractLatticeGraph)::Bool = has_cells(graph)
 
 # =============================================================================
 # Optional Interface Implementation

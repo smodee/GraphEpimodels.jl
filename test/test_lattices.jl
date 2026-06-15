@@ -12,6 +12,110 @@ end
 # Euclidean distance between columns i and j of a 2 × N position matrix.
 _coldist(pos, i, j) = hypot(pos[1, i] - pos[1, j], pos[2, i] - pos[2, j])
 
+@testset "HypercubicLattice" begin
+    @testset "dimension aliases" begin
+        @test SquareLattice === HypercubicLattice{2}
+        @test CubeLattice === HypercubicLattice{3}
+        @test create_square_lattice(4, 4) isa HypercubicLattice{2}
+        @test create_cube_lattice(3, 3, 3) isa HypercubicLattice{3}
+        @test create_hypercubic_lattice(2, 2, 2, 2) isa HypercubicLattice{4}
+    end
+
+    @testset "2D non-square (legacy was buggy here)" begin
+        g = create_square_lattice(3, 5, :absorbing)   # width=3, height=5
+        @test num_nodes(g) == 15
+        @test _is_symmetric(g)                          # legacy 3×5 was NOT symmetric
+        degs = [get_node_degree(g, i) for i in 1:num_nodes(g)]
+        @test maximum(degs) == 4                        # interior is 4-regular
+        @test minimum(degs) == 2                        # corners
+        @test count(==(2), degs) == 4                   # exactly four corners
+        @test length(get_boundary_nodes(g)) == 2 * (3 + 5) - 4   # perimeter = 12
+        # get_node_degree must agree with the actual neighbour list everywhere.
+        @test all(get_node_degree(g, i) == length(get_neighbors(g, i)) for i in 1:num_nodes(g))
+    end
+
+    @testset "index ↔ coordinate round trip" begin
+        g = create_square_lattice(6, 4)
+        for i in 1:num_nodes(g)
+            r, c = index_to_coord(g, i)
+            @test coord_to_index(g, r, c) == i          # legacy (row, col) API
+        end
+        c = create_cube_lattice(4, 5, 3)
+        for i in 1:num_nodes(c)
+            @test coord_to_index(c, index_to_coord(c, i)) == i   # NTuple API
+        end
+        @test get_center_node(create_square_lattice(25, 25)) == 313  # matches legacy
+    end
+
+    @testset "3D cube topology + geometry" begin
+        c = create_cube_lattice(5, 5, 5, :absorbing)
+        @test num_nodes(c) == 125
+        @test _is_symmetric(c)
+        degs = [get_node_degree(c, i) for i in 1:num_nodes(c)]
+        @test maximum(degs) == 6                        # interior is 6-regular
+        @test get_node_degree(c, get_center_node(c)) == 6
+        # Geometry: a 3D layout, no 2D cell tiling.
+        @test supported_layout_dims(c) == (3,)
+        @test layout_dim(c) == 3 && has_layout(c)
+        @test !has_cells(c)
+        pos = node_positions(c)
+        @test size(pos) == (3, 125)
+        # Neighbours sit at unit Euclidean distance in the 3D embedding.
+        ctr = get_center_node(c)
+        for j in get_neighbors(c, ctr)
+            d = sqrt(sum(abs2, pos[:, ctr] .- pos[:, j]))
+            @test isapprox(d, 1.0; atol = 1e-9)
+        end
+    end
+
+    @testset "4D topology" begin
+        h = create_hypercubic_lattice((4, 4, 4, 4), boundary = :absorbing)
+        @test num_nodes(h) == 256
+        @test _is_symmetric(h)
+        @test get_node_degree(h, get_center_node(h)) == 8   # interior is 2D = 8-regular
+        @test supported_layout_dims(h) == ()                # no intrinsic layout in d≥4
+        @test !has_layout(h)
+        @test_throws ErrorException node_positions(h)       # nothing to draw
+    end
+
+    @testset "periodic wrap (torus)" begin
+        for g in (create_torus(8), create_cube_lattice(4, 4, 4, :periodic))
+            @test _is_symmetric(g)
+            D = g isa CubeLattice ? 3 : 2
+            @test all(get_node_degree(g, i) == 2D for i in 1:num_nodes(g))  # every node full degree
+            @test isempty(get_boundary_nodes(g))
+            @test !has_boundary(g)
+            @test distance_to_boundary(g, 1) == Inf
+        end
+    end
+
+    @testset "2D geometry unchanged" begin
+        g = create_square_lattice(7, 7)
+        @test supported_layout_dims(g) == (2,) && has_cells(g)
+        @test size(node_positions(g)) == (2, 49)
+        cells = cell_polygons(g)
+        @test length(cells) == 49 && size(cells[1], 2) == 4   # unit-square cells
+    end
+
+    @testset "SIR runs on a 3D cube" begin
+        c = create_cube_lattice(10, 10, 10, :absorbing)
+        p = create_sir_process(c, 3.0, 1.0; initial_infected = :center, rng_seed = 1)
+        steps = 0
+        while is_active(p) && steps < 50_000
+            step!(p); steps += 1
+        end
+        counts = count_states(c)
+        @test counts[INFECTED] + counts[REMOVED] >= 1
+        @test counts[SUSCEPTIBLE] + counts[INFECTED] + counts[REMOVED] == num_nodes(c)
+    end
+
+    @testset "constructor validation" begin
+        @test_throws ArgumentError create_square_lattice(0, 5)
+        @test_throws ArgumentError create_hypercubic_lattice((10, -1, 3))
+        @test_throws ArgumentError create_square_lattice(5, 5, :bogus)
+    end
+end
+
 @testset "TriangularLattice" begin
     tri = create_triangular_lattice(7, 7)
 

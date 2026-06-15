@@ -39,6 +39,10 @@ sir_on(g) = create_sir_process(g, 0.6, 1.0; initial_infected = [1], rng_seed = 1
         for (_, g) in network_graphs()
             @test visualizer_for(g) isa NetworkVisualizer
         end
+        # A lattice without a cell tiling (3D cube, d≥4 hypercubic) can't draw as
+        # cells, so it routes to the node-link visualizer instead.
+        @test visualizer_for(create_cube_lattice(3, 3, 3)) isa NetworkVisualizer
+        @test visualizer_for(create_hypercubic_lattice(2, 2, 2, 2)) isa NetworkVisualizer
     end
 
     @testset "can_visualize" begin
@@ -48,11 +52,16 @@ sir_on(g) = create_sir_process(g, 0.6, 1.0; initial_infected = [1], rng_seed = 1
         for (_, g) in vcat(lattice_graphs(), network_graphs())
             @test can_visualize(net, g)
         end
-        # A lattice visualizer handles lattices, not node-link graphs.
+        # A lattice visualizer handles cell lattices, not node-link graphs.
         for (_, g) in lattice_graphs()
             @test can_visualize(lat, g)
         end
         @test !can_visualize(lat, create_complete_graph(5))
+        # A cell-less lattice (3D cube) is out of scope for the cell visualizer but
+        # fine for the node-link one.
+        cube = create_cube_lattice(3, 3, 3)
+        @test !can_visualize(lat, cube)
+        @test can_visualize(net, cube)
     end
 
     @testset "color schemes" begin
@@ -107,6 +116,15 @@ sir_on(g) = create_sir_process(g, 0.6, 1.0; initial_infected = [1], rng_seed = 1
             p3 = node_positions(g; dim = 3)
             @test size(p3) == (3, num_nodes(g))
         end
+
+        # A cube lattice is 3D-only: it advertises dim 3 (not 2), so it routes to
+        # the node-link visualizer and the rendering layer defaults it to 3D. This
+        # is the geometry that drives that default.
+        cube = create_cube_lattice(4, 4, 4)
+        @test supported_layout_dims(cube) == (3,)
+        @test layout_dim(cube) == 3
+        @test size(node_positions(cube; dim = 3)) == (3, num_nodes(cube))
+        @test_throws ArgumentError node_positions(cube; dim = 2)
     end
 
     @testset "3D layout geometry" begin
@@ -189,6 +207,16 @@ sir_on(g) = create_sir_process(g, 0.6, 1.0; initial_infected = [1], rng_seed = 1
                                          sampler = EveryStep(), max_steps = 20,
                                          filename = file, dim = 3, turntable = true)
                 @test rec isa SimulationRecording
+                @test isfile(file) && filesize(file) > 0
+            end
+
+            # A 3D cube lattice renders as a node-link diagram and DEFAULTS to 3D
+            # (no explicit dim), exercising the has_cells routing + dim auto-select.
+            @testset "3D cube lattice render + save (defaults to 3D)" begin
+                g = create_cube_lattice(4, 4, 4)
+                @test visualizer_for(g) isa NetworkVisualizer
+                file = joinpath(dir, "cube_3d.png")
+                save_plot(sir_on(g), file)
                 @test isfile(file) && filesize(file) > 0
             end
 
