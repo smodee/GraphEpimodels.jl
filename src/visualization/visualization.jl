@@ -175,36 +175,55 @@ const COLOR_SCHEMES = Dict{Symbol, Dict{Symbol, Any}}(
         :boundary => :black,
         :background => :white,
         :name => "Chase-Escape (Prey=red, Predator=blue)"
+    ),
+
+    :maki_thompson => Dict(
+        :susceptible => :white,        # ignorant
+        :infected => :orange,          # spreader
+        :removed => :gray,             # stifler
+        :boundary => :black,
+        :background => :white,
+        :name => "Maki-Thompson (Spreader=orange, Stifler=gray)"
+    ),
+
+    # Neutral default for when the model is unknown / unspecified.
+    :general => Dict(
+        :susceptible => :lightgray,
+        :infected => :crimson,
+        :removed => :steelblue,
+        :boundary => :black,
+        :background => :white,
+        :name => "General (neutral default)"
     )
 )
 
 """
-Get color for a specific epidemic state from a color scheme.
+Pick the color scheme that best matches an epidemic model.
 
-# Arguments
-- `state::NodeState`: The epidemic state
-- `scheme::Symbol`: Color scheme name (default: :zim)
+Used by the rendering entry points so that omitting `color_scheme` yields a
+model-appropriate palette (the user can always override with an explicit scheme).
+Falls back to `:general` for unrecognized models.
 
-# Returns
-- Color value (type depends on plotting backend)
+Accepts either a process or a short process name (e.g. the `process_name` stored
+on a `SimulationRecording`: "SIR", "ZIM", …).
 """
-function get_state_color(state::NodeState, scheme::Symbol = :zim)
-    if scheme ∉ keys(COLOR_SCHEMES)
-        throw(ArgumentError("Unknown color scheme: $scheme. Available: $(keys(COLOR_SCHEMES))"))
-    end
-    
-    color_map = COLOR_SCHEMES[scheme]
-    
-    return if state == SUSCEPTIBLE
-        color_map[:susceptible]
-    elseif state == INFECTED  
-        color_map[:infected]
-    elseif state == REMOVED
-        color_map[:removed]
+function default_color_scheme(name::AbstractString)::Symbol
+    n = lowercase(name)
+    if n == "zim"
+        return :zim
+    elseif n == "sir"
+        return :sir
+    elseif n in ("chaseescape", "chase-escape", "chase_escape")
+        return :chaseescape
+    elseif n in ("makithompson", "maki-thompson", "maki_thompson")
+        return :maki_thompson
     else
-        color_map[:background]  # Fallback
+        return :general
     end
 end
+
+default_color_scheme(process::AbstractEpidemicProcess)::Symbol =
+    default_color_scheme(_process_name(process))
 
 """
 Get all available color scheme names.
@@ -326,7 +345,14 @@ end
 Return an appropriate visualizer for `graph`, selected by its type.
 
 - `AbstractLatticeGraph` (square / triangular / hexagonal) → `LatticeVisualizer`
-- `AdjacencyGraph` → `NetworkVisualizer`
+  (dual-tiling cells)
+- any other `AbstractEpidemicGraph` → `NetworkVisualizer` (node-link diagram)
+
+The lattice method is the more specific one, so lattices route to the
+`LatticeVisualizer`; everything else (general `AdjacencyGraph`, `ErdosRenyiGraph`,
+and the structured implicit graphs — complete / cycle / path / star) falls through
+to the node-link `NetworkVisualizer`, which can draw any graph (it has a
+spring-layout fallback when no coordinates are attached).
 
 Extra keyword arguments are forwarded to the visualizer constructor.
 """
@@ -334,44 +360,13 @@ function visualizer_for(graph::AbstractLatticeGraph; kwargs...)::AbstractVisuali
     return LatticeVisualizer(; kwargs...)
 end
 
-function visualizer_for(graph::AdjacencyGraph; kwargs...)::AbstractVisualizer
+function visualizer_for(graph::AbstractEpidemicGraph; kwargs...)::AbstractVisualizer
     return NetworkVisualizer(; kwargs...)
 end
 
 # =============================================================================
 # Utility Functions for Process Analysis
 # =============================================================================
-
-"""
-Extract visualization data from process state.
-
-Converts process state into a format suitable for visualization.
-This is a common operation that many visualizers need.
-
-# Arguments
-- `process::AbstractEpidemicProcess`: The process
-
-# Returns
-- `Dict{Symbol, Any}`: Visualization data including states, statistics, etc.
-"""
-function extract_visualization_data(process::AbstractEpidemicProcess)::Dict{Symbol, Any}
-    graph = get_graph(process)
-    states = node_states_raw(graph)  # Use raw states for performance
-    statistics = get_statistics(process)
-    
-    # Count states for summary info
-    state_counts = count_states(graph)
-    
-    return Dict{Symbol, Any}(
-        :node_states => states,
-        :state_counts => state_counts,
-        :statistics => statistics,
-        :graph => graph,
-        :num_nodes => num_nodes(graph),
-        :has_boundary => has_boundary(graph),
-        :boundary_nodes => get_boundary_nodes(graph)
-    )
-end
 
 """
 Generate title text for epidemic visualizations.
@@ -392,12 +387,7 @@ function generate_visualization_title(process::AbstractEpidemicProcess,
     base_title = if custom_title !== nothing
         custom_title
     else
-        process_name = if isa(process, ZIMProcess)
-            "ZIM"
-        else
-            string(typeof(process))
-        end
-        "Epidemic Simulation ($process_name)"
+        "Epidemic Simulation ($(_process_name(process)))"
     end
     
     info_parts = String[]
@@ -428,7 +418,7 @@ end
 # Makie-backed entry points (implemented in the CairoMakie extension)
 # =============================================================================
 #
-# `render_frame`, `save_lattice_plot`, `animate_recording`, and
+# `render_frame`, `save_plot`, `animate_recording`, and
 # `animate_simulation` are implemented in ext/GraphEpimodelsCairoMakieExt.jl,
 # which loads only when the user runs `using CairoMakie`. They are declared here
 # (as generic functions) so the package can export them and the extension can add
@@ -439,6 +429,6 @@ end
 const _MAKIE_HINT = "requires CairoMakie. Run `using CairoMakie` to enable plotting/animation."
 
 render_frame(args...; kwargs...)      = error("render_frame $_MAKIE_HINT")
-save_lattice_plot(args...; kwargs...) = error("save_lattice_plot $_MAKIE_HINT")
+save_plot(args...; kwargs...)         = error("save_plot $_MAKIE_HINT")
 animate_recording(args...; kwargs...) = error("animate_recording $_MAKIE_HINT")
 animate_simulation(args...; kwargs...) = error("animate_simulation $_MAKIE_HINT")

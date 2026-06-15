@@ -8,7 +8,7 @@ triangular→hexagon, hexagonal→triangle). Colors come from the shared
 `COLOR_SCHEMES` table; state 0/1/2 maps to susceptible/infected/removed.
 
 This file holds only the type and its backend-independent interface methods. The
-Makie rendering (`render_frame`, `visualize_state`, `save_lattice_plot`) lives in
+Makie rendering (`render_frame`, `visualize_state`, `save_plot`) lives in
 ext/GraphEpimodelsCairoMakieExt.jl and loads with `using CairoMakie`.
 """
 
@@ -32,7 +32,7 @@ mutable struct LatticeVisualizer <: StaticVisualizer
     show_grid::Bool
 
     function LatticeVisualizer(;
-                              color_scheme::Symbol = :zim,
+                              color_scheme::Symbol = :general,
                               show_boundary::Bool = false,
                               figure_size::Tuple{Int, Int} = (600, 600),
                               show_grid::Bool = false)
