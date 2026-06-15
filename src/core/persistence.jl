@@ -58,13 +58,19 @@ function extract_process_info(process::AbstractEpidemicProcess)::Dict{String, An
     graph = get_graph(process)
     info["graph_type"] = string(nameof(typeof(graph)))
 
-    # Graph-specific parameters
-    if hasfield(typeof(graph), :width)
-        info["width"] = graph.width
-    end
-
-    if hasfield(typeof(graph), :height)
-        info["height"] = graph.height
+    # Graph-specific parameters. The hypercubic lattice stores its shape in a
+    # `dims` tuple rather than width/height fields; the 2D alias maps to
+    # (width, height). Other lattices (triangular/hexagonal) keep real fields.
+    if graph isa SquareLattice
+        info["width"]  = graph.dims[1]
+        info["height"] = graph.dims[2]
+    else
+        if hasfield(typeof(graph), :width)
+            info["width"] = graph.width
+        end
+        if hasfield(typeof(graph), :height)
+            info["height"] = graph.height
+        end
     end
 
     if hasfield(typeof(graph), :boundary)

@@ -70,12 +70,12 @@ export get_active_edges
 # Geometry interface (consumed by visualization)
 export supported_layout_dims, has_layout, layout_dim, node_positions, has_cells, cell_polygons
 
-# Square lattice implementation
-include("graphs/lattice.jl")
-export SquareLattice
+# Hypercubic lattice (ℤ^D nearest-neighbour) — SquareLattice = {2}, CubeLattice = {3}
+include("graphs/hypercubic_lattice.jl")
+export HypercubicLattice, SquareLattice, CubeLattice
 export coord_to_index, index_to_coord
-export get_center_node, get_random_nodes, distance_to_boundary
-export create_square_lattice, create_torus
+export get_center_node, get_random_nodes, distance_to_boundary, is_boundary_node
+export create_hypercubic_lattice, create_square_lattice, create_cube_lattice, create_torus
 
 # Triangular lattice (6-neighbor) and hexagonal/honeycomb lattice (3-neighbor)
 include("graphs/triangular_lattice.jl")

@@ -344,20 +344,23 @@ end
 """
 Return an appropriate visualizer for `graph`, selected by its type.
 
-- `AbstractLatticeGraph` (square / triangular / hexagonal) → `LatticeVisualizer`
-  (dual-tiling cells)
+- a *cell* lattice (square / triangular / hexagonal — `has_cells(graph)`) →
+  `LatticeVisualizer` (dual-tiling cells)
 - any other `AbstractEpidemicGraph` → `NetworkVisualizer` (node-link diagram)
 
-The lattice method is the more specific one, so lattices route to the
-`LatticeVisualizer`; everything else (general `AdjacencyGraph`, `ErdosRenyiGraph`,
-and the structured implicit graphs — complete / cycle / path / star) falls through
-to the node-link `NetworkVisualizer`, which can draw any graph (it has a
-spring-layout fallback when no coordinates are attached).
+The lattice method is the more specific one, but it routes by `has_cells`: a
+lattice with a space-filling cell tiling uses the `LatticeVisualizer`, while a
+lattice *without* cells (a 3D `CubeLattice`, or a d≥4 hypercubic lattice) can't be
+drawn as cells and falls through to the `NetworkVisualizer`. Everything else
+(general `AdjacencyGraph`, `ErdosRenyiGraph`, and the structured implicit graphs —
+complete / cycle / path / star) also routes to the node-link `NetworkVisualizer`,
+which can draw any graph: it reads `node_positions` + `get_neighbors` (in 3D where
+the graph provides a 3D layout) and falls back to a spring layout otherwise.
 
 Extra keyword arguments are forwarded to the visualizer constructor.
 """
 function visualizer_for(graph::AbstractLatticeGraph; kwargs...)::AbstractVisualizer
-    return LatticeVisualizer(; kwargs...)
+    return has_cells(graph) ? LatticeVisualizer(; kwargs...) : NetworkVisualizer(; kwargs...)
 end
 
 function visualizer_for(graph::AbstractEpidemicGraph; kwargs...)::AbstractVisualizer
