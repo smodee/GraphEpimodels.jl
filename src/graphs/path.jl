@@ -114,10 +114,10 @@ end
 # A path is drawn as collinear nodes: node i sits at (i, 0). It is not a
 # space-filling tiling, so it supplies no cells.
 
-has_layout(::PathGraph)::Bool = true
-layout_dim(::PathGraph)::Int = 2
+supported_layout_dims(::PathGraph)::Tuple{Vararg{Int}} = (2,)
 
-function node_positions(graph::PathGraph)::Matrix{Float64}
+function node_positions(graph::PathGraph; dim::Int = 2)::Matrix{Float64}
+    _check_layout_dim(graph, dim)
     n = graph.n_nodes
     pos = Matrix{Float64}(undef, 2, n)
     @inbounds for idx in 1:n

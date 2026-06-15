@@ -362,11 +362,11 @@ end
 # Its dual cell is the unit square centered on that point — the square tiling is
 # self-dual, so each of the 4 cell edges corresponds to one of the 4 neighbors.
 
-has_layout(::SquareLattice)::Bool = true
-layout_dim(::SquareLattice)::Int = 2
+supported_layout_dims(::SquareLattice)::Tuple{Vararg{Int}} = (2,)
 has_cells(::SquareLattice)::Bool = true
 
-function node_positions(lattice::SquareLattice)::Matrix{Float64}
+function node_positions(lattice::SquareLattice; dim::Int = 2)::Matrix{Float64}
+    _check_layout_dim(lattice, dim)
     n = lattice.n_nodes
     pos = Matrix{Float64}(undef, 2, n)
     @inbounds for idx in 1:n

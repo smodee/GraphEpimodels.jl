@@ -57,6 +57,16 @@ function _lattice_axis(viz::LatticeVisualizer; title::String = "",
                       transparent_background = transparent_background)
 end
 
+"""Create a clean figure + 3D axis (equal aspect, no decorations) for node-link frames."""
+function _make_axis3(figure_size::Tuple{Int,Int}; title::String = "",
+                     transparent_background::Bool = false)
+    bg = transparent_background ? :transparent : :white
+    fig = Figure(size = figure_size, backgroundcolor = bg)
+    ax = Axis3(fig[1, 1]; title = title, aspect = :data, backgroundcolor = bg)
+    hidedecorations!(ax)
+    return fig, ax
+end
+
 """
 Render a single lattice state (raw Int8 vector) to a Makie `Figure`.
 
@@ -171,21 +181,28 @@ ignored for node-link graphs.
 - `transparent_background::Bool`: Transparent background + susceptible cells (lattices only; default: false)
 - `show_boundary::Bool`: Outline the lattice boundary (lattices only; default: false)
 - `show_grid::Bool`: Stroke cell outlines (cell lattices only; default: false)
+- `dim::Int`: Drawing dimension, 2 or 3 (node-link graphs only; default: 2). `dim = 3`
+  draws the graph in 3D — an intrinsic 3D layout where available (star / complete /
+  tree), otherwise a 3D force-directed layout. Lattices support 2D only.
 """
 function GraphEpimodels.save_plot(process::AbstractEpidemicProcess, filename::String;
                                           color_scheme::Union{Symbol, Nothing} = nothing,
                                           figure_size::Tuple{Int, Int} = (800, 800),
                                           transparent_background::Bool = false,
                                           show_boundary::Bool = false,
-                                          show_grid::Bool = false)
+                                          show_grid::Bool = false,
+                                          dim::Int = 2)
     scheme = color_scheme === nothing ? default_color_scheme(process) : color_scheme
     graph = get_graph(process)
     viz = visualizer_for(graph; color_scheme = scheme, figure_size = figure_size)
     if viz isa LatticeVisualizer
+        dim == 2 || throw(ArgumentError(
+            "$(typeof(graph)) renders in 2D only (got dim=$dim); lattices have no 3D layout"))
         viz.show_boundary = show_boundary
         viz.show_grid = show_grid
         fig = visualize_state(viz, process; transparent_background = transparent_background)
     else
+        viz.dim = dim
         fig = visualize_state(viz, process)
     end
     save(filename, fig)
@@ -198,51 +215,89 @@ end
 # =============================================================================
 
 """
-Resolve node positions for a graph: attached coordinates if present, else a
-force-directed (spring) layout. Returns a `2 × n` `Matrix{Float64}`.
+Resolve node positions for a graph in `dim` dimensions (2 or 3). Returns a
+`dim × n` `Matrix{Float64}`.
 
-Works for any `AbstractEpidemicGraph`: structured implicit graphs and lattices
-carry an intrinsic layout (`has_layout`), an `ErdosRenyiGraph` forwards the layout
-of its wrapped graph, and a bare `AdjacencyGraph` with no coordinates falls back
-to a spring layout.
+Resolution order:
+1. If the graph has an intrinsic layout for `dim` (`dim ∈ supported_layout_dims`),
+   use it (star sphere, tree shells, lattice grid, attached coordinates, …).
+2. Else if it has an intrinsic layout of *higher* dimension, project onto the
+   first `dim` axes (e.g. draw a graph with attached 3D coords in 2D).
+3. Else fall back to a force-directed (spring) layout computed in `dim` dimensions.
+
+Works for any `AbstractEpidemicGraph`: an `ErdosRenyiGraph` forwards the layout of
+its wrapped graph, and a bare `AdjacencyGraph` with no coordinates falls back to a
+spring layout.
 """
-function _resolve_positions(graph::AbstractEpidemicGraph)::Matrix{Float64}
-    if has_layout(graph)
-        pos = node_positions(graph)
-        return size(pos, 1) == 2 ? pos : pos[1:2, :]   # drop z for 2D draw
+function _resolve_positions(graph::AbstractEpidemicGraph; dim::Int = 2)::Matrix{Float64}
+    if dim in supported_layout_dims(graph)
+        return node_positions(graph; dim = dim)
+    end
+    ld = layout_dim(graph)
+    if ld > dim
+        return node_positions(graph; dim = ld)[1:dim, :]   # project higher-dim layout
     end
     n = num_nodes(graph)
     adj = falses(n, n)
     @inbounds for i in 1:n, j in get_neighbors(graph, i)
         adj[i, j] = true
     end
-    pts = NetworkLayout.spring(adj; seed = 1)
-    mat = Matrix{Float64}(undef, 2, n)
-    @inbounds for i in 1:n
-        mat[1, i] = pts[i][1]
-        mat[2, i] = pts[i][2]
+    pts = NetworkLayout.spring(adj; dim = dim, seed = 1)
+    mat = Matrix{Float64}(undef, dim, n)
+    @inbounds for i in 1:n, d in 1:dim
+        mat[d, i] = pts[i][d]
     end
     return mat
 end
 
-"""Draw a network frame into an existing axis (edges + colored node markers)."""
+# Convert a `dim × n` coordinate matrix to a vector of Makie points, picking
+# Point3f for a 3-row matrix and Point2f otherwise. Used for both nodes and edges
+# so the 2D and 3D draw paths share one code path.
+function _to_points(pos::AbstractMatrix{<:Real})
+    n = size(pos, 2)
+    if size(pos, 1) == 3
+        return [Point3f(pos[1, i], pos[2, i], pos[3, i]) for i in 1:n]
+    end
+    return [Point2f(pos[1, i], pos[2, i]) for i in 1:n]
+end
+
+"""Create a node-link axis: 2D `Axis` (equal aspect) or 3D `Axis3` per `viz.dim`."""
+function _network_axis(fig, viz::NetworkVisualizer; title::String = "")
+    if viz.dim == 3
+        ax = Axis3(fig[1, 1]; title = title, aspect = :data)
+        hidedecorations!(ax)
+        return ax
+    end
+    ax = Axis(fig[1, 1]; title = title, aspect = DataAspect())
+    hidedecorations!(ax)
+    hidespines!(ax)
+    return ax
+end
+
+"""
+Draw a network frame into an existing axis (edges + colored node markers).
+
+Works in 2D and 3D: the drawing dimension follows the coordinate matrix (2 or 3
+rows), so the same code renders into an `Axis` or an `Axis3`.
+"""
 function _draw_network!(ax, viz::NetworkVisualizer, graph::AbstractEpidemicGraph,
                         states_raw::Vector{Int8};
                         positions::Union{Matrix{Float64}, Nothing} = nothing)
-    pos = positions === nothing ? _resolve_positions(graph) : positions
+    pos = positions === nothing ? _resolve_positions(graph; dim = viz.dim) : positions
+    pts = _to_points(pos)
 
     if viz.show_edges
-        segs = Point2f[]
+        segs = eltype(pts)[]
         @inbounds for i in 1:num_nodes(graph), j in get_neighbors(graph, i)
             i < j || continue
-            push!(segs, Point2f(pos[1, i], pos[2, i]))
-            push!(segs, Point2f(pos[1, j], pos[2, j]))
+            push!(segs, pts[i])
+            push!(segs, pts[j])
         end
         isempty(segs) || linesegments!(ax, segs; color = viz.edge_color)
     end
 
     colors = _node_colors(viz.color_scheme, states_raw)
-    scatter!(ax, pos[1, :], pos[2, :]; color = colors, markersize = viz.node_size,
+    scatter!(ax, pts; color = colors, markersize = viz.node_size,
              strokewidth = 0.5, strokecolor = :black)
     return ax
 end
@@ -251,9 +306,7 @@ function GraphEpimodels.render_frame(viz::NetworkVisualizer, graph::AbstractEpid
                                      states_raw::Vector{Int8}; title::String = "",
                                      positions::Union{Matrix{Float64}, Nothing} = nothing)
     fig = Figure(size = viz.figure_size)
-    ax = Axis(fig[1, 1]; title = title, aspect = DataAspect())
-    hidedecorations!(ax)
-    hidespines!(ax)
+    ax = _network_axis(fig, viz; title = title)
     _draw_network!(ax, viz, graph, states_raw; positions = positions)
     return fig
 end
@@ -288,6 +341,18 @@ function _frame_limits(positions::Matrix{Float64})
     return (xlo - mx, xhi + mx, ylo - my, yhi + my)
 end
 
+"""Apply fixed 3D limits (with margin) to an `Axis3` so the view stays steady."""
+function _apply_limits3!(ax, positions::Matrix{Float64})
+    xlo, xhi = extrema(@view positions[1, :])
+    ylo, yhi = extrema(@view positions[2, :])
+    zlo, zhi = extrema(@view positions[3, :])
+    mx = 0.05 * (xhi - xlo) + 0.5
+    my = 0.05 * (yhi - ylo) + 0.5
+    mz = 0.05 * (zhi - zlo) + 0.5
+    limits!(ax, xlo - mx, xhi + mx, ylo - my, yhi + my, zlo - mz, zhi + mz)
+    return ax
+end
+
 """
 Render a recording to an animated GIF or MP4 (format from the filename extension).
 
@@ -308,6 +373,12 @@ node-link diagram.
 - `figure_size::Tuple{Int, Int}`: Frame size in pixels (default: (600, 600))
 - `show_boundary::Bool`: Outline the lattice boundary (lattices only; default: false)
 - `show_grid::Bool`: Stroke cell outlines (cell lattices only; default: false)
+- `dim::Int`: Drawing dimension, 2 or 3 (node-link graphs only; default: 2). `dim = 3`
+  draws an intrinsic 3D layout where available (star / complete / tree), else a 3D
+  force-directed one. Ignored when an explicit `visualizer` is supplied (it carries
+  its own `dim`). Lattices support 2D only.
+- `turntable::Bool`: For 3D animations, slowly rotate the camera one full turn over
+  the clip (default: false). No effect in 2D.
 - `visualizer::Union{AbstractVisualizer, Nothing}`: Override the auto-selected
   visualizer (default: `nothing` → chosen by graph type).
 
@@ -323,11 +394,19 @@ function GraphEpimodels.animate_recording(rec::SimulationRecording;
                                           show_grid::Bool = false,
                                           show_title::Bool = true,
                                           transparent_background::Bool = false,
+                                          dim::Int = 2,
+                                          turntable::Bool = false,
                                           visualizer::Union{AbstractVisualizer, Nothing} = nothing)
     graph = rec.graph
     if visualizer === nothing
         scheme = color_scheme === nothing ? default_color_scheme(rec.process_name) : color_scheme
         viz = visualizer_for(graph; color_scheme = scheme, figure_size = figure_size)
+        if viz isa NetworkVisualizer
+            viz.dim = dim
+        elseif dim != 2
+            throw(ArgumentError(
+                "$(typeof(graph)) renders in 2D only (got dim=$dim); lattices have no 3D layout"))
+        end
     else
         viz = visualizer
     end
@@ -336,16 +415,26 @@ function GraphEpimodels.animate_recording(rec::SimulationRecording;
         viz.show_grid = show_grid
     end
 
+    is3d = viz isa NetworkVisualizer && viz.dim == 3
+
     # A general (node-link) graph gets a single fixed layout so nodes don't move
     # between frames; lattices use their intrinsic node positions.
-    positions = viz isa NetworkVisualizer ? _resolve_positions(graph) :
+    positions = viz isa NetworkVisualizer ? _resolve_positions(graph; dim = viz.dim) :
                 node_positions(graph)
-    xlo, xhi, ylo, yhi = _frame_limits(positions)
 
     title0 = show_title ? _frame_title(rec, 1) : ""
-    fig, ax = _make_axis(figure_size; title = title0,
-                         transparent_background = transparent_background)
-    limits!(ax, xlo, xhi, ylo, yhi)
+    if is3d
+        fig, ax = _make_axis3(figure_size; title = title0,
+                              transparent_background = transparent_background)
+        _apply_limits3!(ax, positions)
+        base_azimuth = ax.azimuth[]
+    else
+        fig, ax = _make_axis(figure_size; title = title0,
+                             transparent_background = transparent_background)
+        xlo, xhi, ylo, yhi = _frame_limits(positions)
+        limits!(ax, xlo, xhi, ylo, yhi)
+        base_azimuth = 0.0
+    end
 
     layout_pos = viz isa NetworkVisualizer ? positions : nothing
     n = num_frames(rec)
@@ -353,6 +442,12 @@ function GraphEpimodels.animate_recording(rec::SimulationRecording;
         empty!(ax)
         if show_title
             ax.title = _frame_title(rec, idx)
+        end
+        if is3d
+            _apply_limits3!(ax, positions)   # keep limits steady across frames
+            if turntable
+                ax.azimuth[] = base_azimuth + 2π * (idx - 1) / n
+            end
         end
         _draw_frame!(ax, viz, graph, rec.frames[idx];
                      positions = layout_pos,
@@ -392,6 +487,8 @@ function GraphEpimodels.animate_simulation(process::AbstractEpidemicProcess;
                                            show_grid::Bool = false,
                                            show_title::Bool = true,
                                            transparent_background::Bool = false,
+                                           dim::Int = 2,
+                                           turntable::Bool = false,
                                            visualizer::Union{AbstractVisualizer, Nothing} = nothing)::SimulationRecording
     rec = record_simulation(process;
                             sampler = sampler,
@@ -408,6 +505,8 @@ function GraphEpimodels.animate_simulation(process::AbstractEpidemicProcess;
                       show_grid = show_grid,
                       show_title = show_title,
                       transparent_background = transparent_background,
+                      dim = dim,
+                      turntable = turntable,
                       visualizer = visualizer)
 
     return rec

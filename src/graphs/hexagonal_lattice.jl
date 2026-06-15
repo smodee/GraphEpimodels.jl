@@ -145,8 +145,7 @@ end
 # is a regular hexagon. The dual cell is an equilateral triangle of circumradius
 # 1 centered on the node, pointing down when (row + col) is even and up when odd.
 
-has_layout(::HexagonalLattice)::Bool = true
-layout_dim(::HexagonalLattice)::Int = 2
+supported_layout_dims(::HexagonalLattice)::Tuple{Vararg{Int}} = (2,)
 has_cells(::HexagonalLattice)::Bool = true
 
 @inline function _hex_node_xy(row::Int, col::Int)::Tuple{Float64, Float64}
@@ -155,7 +154,8 @@ has_cells(::HexagonalLattice)::Bool = true
     return (x, y)
 end
 
-function node_positions(lattice::HexagonalLattice)::Matrix{Float64}
+function node_positions(lattice::HexagonalLattice; dim::Int = 2)::Matrix{Float64}
+    _check_layout_dim(lattice, dim)
     n = lattice.n_nodes
     pos = Matrix{Float64}(undef, 2, n)
     @inbounds for idx in 1:n

@@ -68,7 +68,7 @@ export count_states, get_nodes_in_state, count_neighbors_by_state
 export get_active_edges
 
 # Geometry interface (consumed by visualization)
-export has_layout, layout_dim, node_positions, has_cells, cell_polygons
+export supported_layout_dims, has_layout, layout_dim, node_positions, has_cells, cell_polygons
 
 # Square lattice implementation
 include("graphs/lattice.jl")

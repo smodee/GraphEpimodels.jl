@@ -148,8 +148,7 @@ end
 # equidistant at unit length. The dual cell is a regular hexagon centered on the
 # node, one edge crossing each of the 6 incident edges.
 
-has_layout(::TriangularLattice)::Bool = true
-layout_dim(::TriangularLattice)::Int = 2
+supported_layout_dims(::TriangularLattice)::Tuple{Vararg{Int}} = (2,)
 has_cells(::TriangularLattice)::Bool = true
 
 @inline function _tri_node_xy(row::Int, col::Int)::Tuple{Float64, Float64}
@@ -158,7 +157,8 @@ has_cells(::TriangularLattice)::Bool = true
     return (x, y)
 end
 
-function node_positions(lattice::TriangularLattice)::Matrix{Float64}
+function node_positions(lattice::TriangularLattice; dim::Int = 2)::Matrix{Float64}
+    _check_layout_dim(lattice, dim)
     n = lattice.n_nodes
     pos = Matrix{Float64}(undef, 2, n)
     @inbounds for idx in 1:n

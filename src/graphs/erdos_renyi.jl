@@ -66,9 +66,9 @@ count_neighbors_by_state(g::ErdosRenyiGraph, node_id::Int, target_state::NodeSta
 
 # Geometry interface (delegated; an ER graph has a layout only if coordinates were
 # attached to the inner graph — see set_coords! below).
-has_layout(g::ErdosRenyiGraph)::Bool = has_layout(g.graph)
-layout_dim(g::ErdosRenyiGraph)::Int = layout_dim(g.graph)
-node_positions(g::ErdosRenyiGraph)::Matrix{Float64} = node_positions(g.graph)
+supported_layout_dims(g::ErdosRenyiGraph)::Tuple{Vararg{Int}} = supported_layout_dims(g.graph)
+node_positions(g::ErdosRenyiGraph; dim::Int = layout_dim(g))::Matrix{Float64} =
+    node_positions(g.graph; dim = dim)
 
 """Attach (or replace) node coordinates for plotting (`dim × n`)."""
 set_coords!(g::ErdosRenyiGraph, coords::AbstractMatrix{<:Real}) = (set_coords!(g.graph, coords); g)

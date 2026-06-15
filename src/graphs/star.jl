@@ -124,14 +124,23 @@ end
 # Geometry Interface (for visualization)
 # =============================================================================
 #
-# The center sits at the origin and the leaves are spread evenly on the unit
-# circle around it. It is not a space-filling tiling, so it supplies no cells.
+# The center sits at the origin and the leaves are spread evenly around it: on
+# the unit circle in 2D, on the unit sphere (Fibonacci spiral) in 3D. It is not a
+# space-filling tiling, so it supplies no cells.
 
-has_layout(::StarGraph)::Bool = true
-layout_dim(::StarGraph)::Int = 2
+supported_layout_dims(::StarGraph)::Tuple{Vararg{Int}} = (2, 3)
 
-function node_positions(graph::StarGraph)::Matrix{Float64}
+function node_positions(graph::StarGraph; dim::Int = 2)::Matrix{Float64}
+    _check_layout_dim(graph, dim)
     n = graph.n_nodes
+    if dim == 3
+        # Center at the origin; leaves on the unit sphere.
+        pos = Matrix{Float64}(undef, 3, n)
+        @inbounds pos[:, 1] .= 0.0
+        leaves = _fibonacci_sphere(n - 1)
+        @inbounds pos[:, 2:n] .= leaves
+        return pos
+    end
     pos = Matrix{Float64}(undef, 2, n)
     @inbounds begin
         pos[1, 1] = 0.0
