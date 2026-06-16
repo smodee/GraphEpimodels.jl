@@ -85,25 +85,8 @@ end
 # Core Interface Implementation
 # =============================================================================
 
-@inline num_nodes(lattice::TriangularLattice)::Int = lattice.n_nodes
-
-node_states_raw(lattice::TriangularLattice)::Vector{Int8} = lattice.states
-
-function set_node_states_raw!(lattice::TriangularLattice, states::Vector{Int8})
-    if length(states) != num_nodes(lattice)
-        throw(ArgumentError("Expected $(num_nodes(lattice)) states, got $(length(states))"))
-    end
-    lattice.states = states
-end
-
-function get_neighbors(lattice::TriangularLattice, node_id::Int)::Vector{Int}
-    return get_neighbors!(Int[], lattice, node_id)
-end
-
 function get_neighbors!(neighbors::Vector{Int}, lattice::TriangularLattice, node_id::Int)::Vector{Int}
-    if node_id < 1 || node_id > num_nodes(lattice)
-        throw(BoundsError("Node ID $node_id out of range [1, $(num_nodes(lattice))]"))
-    end
+    _check_node(lattice, node_id)
 
     row, col = _tri_index_to_coord(node_id, lattice.width)
     empty!(neighbors)
@@ -129,8 +112,6 @@ function get_neighbors!(neighbors::Vector{Int}, lattice::TriangularLattice, node
 
     return neighbors
 end
-
-get_boundary_nodes(lattice::TriangularLattice)::Vector{Int} = copy(lattice.boundary_nodes)
 
 """Add neighbor (row, col) to the list if within the rectangular array bounds."""
 @inline function _add_perimeter_neighbor!(neighbors::Vector{Int}, row::Int, col::Int,

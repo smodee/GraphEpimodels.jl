@@ -43,30 +43,9 @@ end
 # Core Interface Implementation (Required Methods)
 # =============================================================================
 
-@inline function num_nodes(graph::CycleGraph)::Int
-    return graph.n_nodes
-end
-
-function node_states_raw(graph::CycleGraph)::Vector{Int8}
-    return graph.states
-end
-
-function set_node_states_raw!(graph::CycleGraph, states::Vector{Int8})
-    if length(states) != num_nodes(graph)
-        throw(ArgumentError("Expected $(num_nodes(graph)) states, got $(length(states))"))
-    end
-    graph.states = states
-end
-
-function get_neighbors(graph::CycleGraph, node_id::Int)::Vector{Int}
-    return get_neighbors!(Int[], graph, node_id)
-end
-
 function get_neighbors!(neighbors::Vector{Int}, graph::CycleGraph, node_id::Int)::Vector{Int}
+    _check_node(graph, node_id)
     n = graph.n_nodes
-    if node_id < 1 || node_id > n
-        throw(BoundsError("Node ID $node_id out of range [1, $n]"))
-    end
     empty!(neighbors)
     push!(neighbors, _cycle_prev(node_id, n))
     push!(neighbors, _cycle_next(node_id, n))
@@ -75,9 +54,7 @@ end
 
 # Degree is constant: every node on the ring has exactly 2 neighbors.
 @inline function get_node_degree(graph::CycleGraph, node_id::Int)::Int
-    if node_id < 1 || node_id > graph.n_nodes
-        throw(BoundsError("Node ID $node_id out of range [1, $(graph.n_nodes)]"))
-    end
+    _check_node(graph, node_id)
     return 2
 end
 
@@ -92,10 +69,8 @@ guarantees the two neighbors are distinct.
 """
 function count_neighbors_by_state(graph::CycleGraph, node_id::Int,
                                   target_state::NodeState)::Int
+    _check_node(graph, node_id)
     n = graph.n_nodes
-    if node_id < 1 || node_id > n
-        throw(BoundsError("Node ID $node_id out of range [1, $n]"))
-    end
     states = graph.states
     target_int = state_to_int(target_state)
     count = 0
@@ -117,14 +92,7 @@ supported_layout_dims(::CycleGraph)::Tuple{Vararg{Int}} = (2,)
 
 function node_positions(graph::CycleGraph; dim::Int = 2)::Matrix{Float64}
     _check_layout_dim(graph, dim)
-    n = graph.n_nodes
-    pos = Matrix{Float64}(undef, 2, n)
-    @inbounds for idx in 1:n
-        θ = 2π * (idx - 1) / n
-        pos[1, idx] = cos(θ)
-        pos[2, idx] = sin(θ)
-    end
-    return pos
+    return _circle_layout(graph.n_nodes)
 end
 
 # =============================================================================
