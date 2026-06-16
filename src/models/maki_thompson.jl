@@ -68,7 +68,7 @@ mutable struct MakiThompsonProcess{G<:AbstractEpidemicGraph, R<:AbstractRNG} <: 
                                   α::Float64, β::Float64,
                                   stifler_contact::Bool;
                                   rng::R = Random.default_rng()) where {G<:AbstractEpidemicGraph, R<:AbstractRNG}
-        _validate_mt_parameters(α, β)
+        _validate_rates("Spreading rate α" => α, "Stifling rate β" => β)
         new{G,R}(graph, α, β, stifler_contact,
             DictActiveTracker(), DictActiveTracker(),
             Set{Int}(), 0.0, 0, rng)
@@ -78,18 +78,6 @@ end
 # =============================================================================
 # Required Interface Implementation
 # =============================================================================
-
-@inline function get_graph(process::MakiThompsonProcess)::AbstractEpidemicGraph
-    return process.graph
-end
-
-@inline function current_time(process::MakiThompsonProcess)::Float64
-    return process.time
-end
-
-@inline function step_count(process::MakiThompsonProcess)::Int
-    return process.steps
-end
 
 function is_active(process::MakiThompsonProcess)::Bool
     return !isempty(process.spreaders)
@@ -101,50 +89,29 @@ function get_total_rate(process::MakiThompsonProcess)::Float64
     return spreading_rate + stifling_rate
 end
 
-function step!(process::MakiThompsonProcess)::Float64
-    if !is_active(process)
-        return Inf
-    end
-
-    total_rate = get_total_rate(process)
-    if total_rate <= 0.0
-        return Inf
-    end
-
-    dt = randexp(process.rng) / total_rate
-
+# Two event classes: spreading S→I (rate α·spreading-boundary) vs. stifling I→R
+# (rate β·stifling-boundary), each weighted-sampled from its own tracker. (The
+# shared step! draws the waiting time and advances the clock.)
+@inline function _fire_event!(process::MakiThompsonProcess, total_rate::Float64)
     spreading_rate = process.α * get_total_boundary(process.spreading_tracker)
     if rand(process.rng) < spreading_rate / total_rate
-        acting_node = _weighted_sample_active(process.spreading_tracker, process.rng)
-        _mt_spread!(process, acting_node)
+        _mt_spread!(process, _weighted_sample_active(process.spreading_tracker, process.rng))
     else
-        stifling_node = _weighted_sample_active(process.stifling_tracker, process.rng)
-        _mt_stifle!(process, stifling_node)
+        _mt_stifle!(process, _weighted_sample_active(process.stifling_tracker, process.rng))
     end
+end
 
-    process.time  += dt
-    process.steps += 1
-    return dt
+function _clear_trackers!(process::MakiThompsonProcess)
+    clear_active_nodes!(process.spreading_tracker)
+    clear_active_nodes!(process.stifling_tracker)
+    empty!(process.spreaders)
 end
 
 function reset!(process::MakiThompsonProcess,
                 initial_infected::Vector{Int};
                 rng_seed::Union{Int, Nothing} = nothing)
     validate_initial_infected(initial_infected, process.graph)
-
-    process.time  = 0.0
-    process.steps = 0
-
-    if rng_seed !== nothing
-        Random.seed!(process.rng, rng_seed)
-    end
-
-    clear_active_nodes!(process.spreading_tracker)
-    clear_active_nodes!(process.stifling_tracker)
-    empty!(process.spreaders)
-
-    states = node_states_raw(process.graph)
-    fill!(states, state_to_int(SUSCEPTIBLE))
+    states = _reset_prologue!(process; rng_seed = rng_seed)
 
     infected_state = state_to_int(INFECTED)
     for node_id in initial_infected
@@ -169,28 +136,18 @@ end
 # =============================================================================
 
 function _mt_spread!(process::MakiThompsonProcess, acting_node::Int)
-    neighbors         = get_neighbors(process.graph, acting_node)
-    states            = node_states_raw(process.graph)
-    susceptible_state = state_to_int(SUSCEPTIBLE)
-    infected_state    = state_to_int(INFECTED)
+    neighbors = get_neighbors(process.graph, acting_node)
+    states    = node_states_raw(process.graph)
+    target = _random_susceptible_neighbor(neighbors, states, Int[], process.rng)
 
-    susceptible_neighbors = Int[]
-    for neighbor in neighbors
-        if states[neighbor] == susceptible_state
-            push!(susceptible_neighbors, neighbor)
-        end
-    end
-
-    if isempty(susceptible_neighbors)
+    if target == 0
         @warn "Spreader $acting_node has no susceptible neighbours but is in spreading tracker"
         remove_active_node!(process.spreading_tracker, acting_node)
         return
     end
 
-    target = rand(process.rng, susceptible_neighbors)
-    states[target] = infected_state
+    states[target] = state_to_int(INFECTED)
     push!(process.spreaders, target)
-
     _update_tracking_after_mt_spread!(process, acting_node, target)
 end
 
@@ -265,31 +222,13 @@ end
 # =============================================================================
 
 function get_maki_thompson_statistics(process::MakiThompsonProcess)::Dict{Symbol, Any}
-    base_stats = get_statistics(process)
-    base_stats[:α]                   = process.α
-    base_stats[:β]                   = process.β
-    base_stats[:stifler_contact]     = process.stifler_contact
-    base_stats[:escaped]             = has_escaped(process)
-    base_stats[:active_spreaders]    = length(process.stifling_tracker.active_nodes)
-    base_stats[:spreading_boundary]  = get_total_boundary(process.spreading_tracker)
-    base_stats[:stifling_boundary]   = get_total_boundary(process.stifling_tracker)
-    return base_stats
-end
-
-# =============================================================================
-# Parameter Validation
-# =============================================================================
-
-function _validate_mt_parameters(α::Float64, β::Float64)
-    if α <= 0.0
-        throw(ArgumentError("Spreading rate α must be positive, got $α"))
-    end
-    if β <= 0.0
-        throw(ArgumentError("Stifling rate β must be positive, got $β"))
-    end
-    if α > 1000.0 || β > 1000.0
-        @warn "Very large rates (α=$α, β=$β) may cause numerical issues"
-    end
+    return _augment_statistics(process;
+        α = process.α,
+        β = process.β,
+        stifler_contact = process.stifler_contact,
+        active_spreaders = length(process.stifling_tracker.active_nodes),
+        spreading_boundary = get_total_boundary(process.spreading_tracker),
+        stifling_boundary = get_total_boundary(process.stifling_tracker))
 end
 
 # =============================================================================
@@ -331,16 +270,8 @@ end
 
 """
 Convenience overload for creating a Maki-Thompson process on a square lattice.
+Keyword arguments (`stifler_contact`, `boundary`, `initial_infected`, `rng_seed`)
+flow through to the graph-based method.
 """
-function create_maki_thompson_process(width::Int, height::Int,
-                                      α::Float64, β::Float64 = 1.0;
-                                      stifler_contact::Bool = true,
-                                      boundary::Symbol = :absorbing,
-                                      initial_infected::Union{Symbol, Vector{Int}} = :center,
-                                      rng_seed::Union{Int, Nothing} = nothing)
-    lattice = create_square_lattice(width, height, boundary)
-    return create_maki_thompson_process(lattice, α, β;
-                                        stifler_contact  = stifler_contact,
-                                        initial_infected = initial_infected,
-                                        rng_seed         = rng_seed)
-end
+create_maki_thompson_process(width::Int, height::Int, α::Float64, β::Float64 = 1.0; kwargs...) =
+    create_on_square_lattice(create_maki_thompson_process, width, height, α, β; kwargs...)

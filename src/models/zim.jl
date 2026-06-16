@@ -61,7 +61,7 @@ mutable struct ZIMProcess{G<:AbstractEpidemicGraph, R<:AbstractRNG} <: SIRLikePr
     function ZIMProcess(graph::G, λ::Float64, μ::Float64 = 1.0;
                        rng::R = Random.default_rng()) where {G<:AbstractEpidemicGraph, R<:AbstractRNG}
 
-        _validate_zim_parameters(λ, μ)
+        _validate_rates("Infection rate λ" => λ, "Kill rate μ" => μ)
 
         infection_prob = λ / (λ + μ)
         active_tracker = DictActiveTracker()
@@ -80,18 +80,6 @@ end
 # Required Interface Implementation
 # =============================================================================
 
-@inline function get_graph(process::ZIMProcess)::AbstractEpidemicGraph
-    return process.graph
-end
-
-@inline function current_time(process::ZIMProcess)::Float64
-    return process.time
-end
-
-@inline function step_count(process::ZIMProcess)::Int
-    return process.steps
-end
-
 function is_active(process::ZIMProcess)::Bool
     return has_active_nodes(process.active_tracker)
 end
@@ -101,70 +89,34 @@ function get_total_rate(process::ZIMProcess)::Float64
     return (process.λ + process.μ) * boundary_size
 end
 
-function step!(process::ZIMProcess)::Float64
-    if !is_active(process)
-        return Inf  # No active zombies
-    end
-    
-    # Calculate time increment (Gillespie algorithm)
-    total_rate = get_total_rate(process)
-    if total_rate <= 0
-        return Inf
-    end
-    
-    dt = randexp(process.rng) / total_rate
-    
-    # Sample which zombie acts (weighted by susceptible neighbor count)
+# ZIM fires a single event class per active zombie: sample one (weighted by its
+# susceptible-neighbor count), then split λ/(λ+μ) into infect vs. kill. (The shared
+# step! draws the waiting time and advances the clock.)
+@inline function _fire_event!(process::ZIMProcess, total_rate::Float64)
     acting_zombie = _weighted_sample_active(process.active_tracker, process.rng)
-    
-    # Determine outcome: infection vs kill
     if rand(process.rng) < process.infection_prob
-        # Zombie wins - infect a susceptible neighbor
-        _zombie_wins!(process, acting_zombie)
+        _zombie_wins!(process, acting_zombie)   # infect a susceptible neighbor
     else
-        # Zombie loses - gets killed
-        _zombie_loses!(process, acting_zombie)
+        _zombie_loses!(process, acting_zombie)  # zombie is killed
     end
-    
-    # Update time and step count
-    process.time += dt
-    process.steps += 1
-    
-    return dt
 end
 
-function reset!(process::ZIMProcess, 
+_clear_trackers!(process::ZIMProcess) = clear_active_nodes!(process.active_tracker)
+
+function reset!(process::ZIMProcess,
                 initial_infected::Vector{Int};
                 rng_seed::Union{Int, Nothing} = nothing)
-    # Validate input
     validate_initial_infected(initial_infected, process.graph)
-    
-    # Reset time and counters
-    process.time = 0.0
-    process.steps = 0
+    states = _reset_prologue!(process; rng_seed = rng_seed)
 
-    # Seed the RNG if provided
-    if rng_seed !== nothing
-        Random.seed!(process.rng, rng_seed)
-    end
-    
-    # Clear active tracking
-    clear_active_nodes!(process.active_tracker)
-    
-    # Reset all nodes to susceptible
-    states = node_states_raw(process.graph)
-    fill!(states, state_to_int(SUSCEPTIBLE))
-    
-    # Mark every seed infected first, then build active tracking in a second
-    # pass. Counting susceptible neighbors in the same loop would let an earlier
-    # seed see a later seed as still susceptible, leaving its count stale-high.
+    # Mark every seed infected first, then build active tracking in a second pass.
+    # Counting susceptible neighbors in the same loop would let an earlier seed see
+    # a later seed as still susceptible, leaving its count stale-high.
     infected_state = state_to_int(INFECTED)
     for node_id in initial_infected
         states[node_id] = infected_state
     end
-
     for node_id in initial_infected
-        # Add to active tracking if it has susceptible neighbors
         susceptible_count = count_neighbors_by_state(process.graph, node_id, SUSCEPTIBLE)
         add_active_node!(process.active_tracker, node_id, susceptible_count)
     end
@@ -181,35 +133,26 @@ This is the performance-critical function that implements your original algorith
 with efficient active node tracking updates.
 """
 function _zombie_wins!(process::ZIMProcess, zombie_node::Int)
-    # Get susceptible neighbors of the attacking zombie (neighbor_buf reused;
-    # may alias an internal list for non-lattice graphs, so treat it read-only).
+    # Susceptible neighbors of the attacking zombie, via the reused scratch buffers
+    # (no allocation). neighbor_buf may alias an internal list for non-lattice
+    # graphs, so it is read only until we are finished with it.
     neighbors = get_neighbors!(process.neighbor_buf, process.graph, zombie_node)
     states = node_states_raw(process.graph)
-    susceptible_state = state_to_int(SUSCEPTIBLE)
-    infected_state = state_to_int(INFECTED)
+    target = _random_susceptible_neighbor(neighbors, states,
+                                          process.susceptible_buf, process.rng)
 
-    # Collect susceptible neighbors into the reused buffer (no allocation).
-    susceptible_neighbors = process.susceptible_buf
-    empty!(susceptible_neighbors)
-    for neighbor in neighbors
-        if states[neighbor] == susceptible_state
-            push!(susceptible_neighbors, neighbor)
-        end
-    end
-
-    if isempty(susceptible_neighbors)
-        # This shouldn't happen if active tracking is correct
+    if target == 0
+        # This shouldn't happen if active tracking is correct.
         @warn "Zombie $zombie_node has no susceptible neighbors but is marked active"
         remove_active_node!(process.active_tracker, zombie_node)
         return
     end
 
-    # Randomly select a susceptible neighbor to infect
-    target = rand(process.rng, susceptible_neighbors)
-    states[target] = infected_state
-    
-    # Update active tracking (this is the key performance optimization)
-    _update_active_tracking_after_infection!(process, zombie_node, target)
+    states[target] = state_to_int(INFECTED)
+    # Re-fetch into neighbor_buf (the zombie's own neighbors are no longer needed).
+    _track_si_infection!(process.active_tracker, process.graph,
+                         get_neighbors!(process.neighbor_buf, process.graph, target),
+                         zombie_node, target)
 end
 
 """
@@ -225,36 +168,6 @@ function _zombie_loses!(process::ZIMProcess, zombie_node::Int)
     
     # Update neighbor active counts (they gained a susceptible "neighbor" - the removed zombie)
     _update_neighbors_after_zombie_death!(process, zombie_node)
-end
-
-"""
-Update active tracking after a successful infection.
-
-This implements the efficient neighbor count updates from your original algorithm.
-"""
-function _update_active_tracking_after_infection!(process::ZIMProcess, attacking_zombie::Int, new_zombie::Int)
-    # 1. Check if the new zombie becomes active
-    new_susceptible_count = count_neighbors_by_state(process.graph, new_zombie, SUSCEPTIBLE)
-    add_active_node!(process.active_tracker, new_zombie, new_susceptible_count)
-    
-    # 2. Update the attacking zombie's count (lost one susceptible neighbor)
-    current_count = get(process.active_tracker.active_nodes, attacking_zombie, 0)
-    update_active_node!(process.active_tracker, attacking_zombie, current_count - 1)
-    
-    # 3. Update all zombie neighbors of the new zombie (they each lost a susceptible neighbor)
-    new_zombie_neighbors = get_neighbors!(process.neighbor_buf, process.graph, new_zombie)
-    states = node_states_raw(process.graph)
-    infected_state = state_to_int(INFECTED)
-    
-    for neighbor in new_zombie_neighbors
-        if states[neighbor] == infected_state && neighbor != attacking_zombie
-            # This zombie neighbor lost a susceptible neighbor
-            neighbor_count = get(process.active_tracker.active_nodes, neighbor, 0)
-            if neighbor_count > 0
-                update_active_node!(process.active_tracker, neighbor, neighbor_count - 1)
-            end
-        end
-    end
 end
 
 """
@@ -284,36 +197,12 @@ end
 Get ZIM-specific statistics.
 """
 function get_zim_statistics(process::ZIMProcess)::Dict{Symbol, Any}
-    base_stats = get_statistics(process)
-    
-    # Add ZIM-specific information
-    base_stats[:λ] = process.λ
-    base_stats[:μ] = process.μ
-    base_stats[:infection_probability] = process.infection_prob
-    base_stats[:escaped] = has_escaped(process)
-    base_stats[:active_zombies] = length(process.active_tracker.active_nodes)
-    base_stats[:total_boundary_size] = get_total_boundary(process.active_tracker)
-    
-    return base_stats
-end
-
-# =============================================================================
-# Parameter Validation (ZIM-specific)
-# =============================================================================
-
-"""
-Validate ZIM-specific parameters.
-"""
-function _validate_zim_parameters(λ::Float64, μ::Float64)
-    if λ <= 0.0
-        throw(ArgumentError("Infection rate λ must be positive, got $λ"))
-    end
-    if μ <= 0.0
-        throw(ArgumentError("Kill rate μ must be positive, got $μ"))
-    end
-    if λ > 1000.0 || μ > 1000.0
-        @warn "Very large rates (λ=$λ, μ=$μ) may cause numerical issues"
-    end
+    return _augment_statistics(process;
+        λ = process.λ,
+        μ = process.μ,
+        infection_probability = process.infection_prob,
+        active_zombies = length(process.active_tracker.active_nodes),
+        total_boundary_size = get_total_boundary(process.active_tracker))
 end
 
 # =============================================================================
@@ -350,12 +239,9 @@ function create_zim_process(graph::AbstractEpidemicGraph, λ::Float64, μ::Float
 end
 
 """
-Convenience overload for creating a ZIM process on a square lattice.
+Convenience overload for creating a ZIM process on a square lattice. Keyword
+arguments (`boundary`, `initial_infected`, `rng_seed`) flow through to the
+graph-based method.
 """
-function create_zim_process(width::Int, height::Int, λ::Float64, μ::Float64 = 1.0;
-                           boundary::Symbol = :absorbing,
-                           initial_infected::Union{Symbol, Vector{Int}} = :center,
-                           rng_seed::Union{Int, Nothing} = nothing)
-    lattice = create_square_lattice(width, height, boundary)
-    return create_zim_process(lattice, λ, μ; initial_infected=initial_infected, rng_seed=rng_seed)
-end
+create_zim_process(width::Int, height::Int, λ::Float64, μ::Float64 = 1.0; kwargs...) =
+    create_on_square_lattice(create_zim_process, width, height, λ, μ; kwargs...)

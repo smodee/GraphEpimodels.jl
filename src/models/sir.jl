@@ -51,7 +51,7 @@ mutable struct SIRProcess{G<:AbstractEpidemicGraph, R<:AbstractRNG} <: SIRLikePr
 
     function SIRProcess(graph::G, β::Float64, γ::Float64;
                         rng::R = Random.default_rng()) where {G<:AbstractEpidemicGraph, R<:AbstractRNG}
-        _validate_sir_parameters(β, γ)
+        _validate_rates("Transmission rate β" => β, "Recovery rate γ" => γ)
         new{G,R}(graph, β, γ, DictActiveTracker(), Set{Int}(), 0.0, 0, rng)
     end
 end
@@ -59,18 +59,6 @@ end
 # =============================================================================
 # Required Interface Implementation
 # =============================================================================
-
-@inline function get_graph(process::SIRProcess)::AbstractEpidemicGraph
-    return process.graph
-end
-
-@inline function current_time(process::SIRProcess)::Float64
-    return process.time
-end
-
-@inline function step_count(process::SIRProcess)::Int
-    return process.steps
-end
 
 function is_active(process::SIRProcess)::Bool
     return !isempty(process.infected_nodes)
@@ -82,60 +70,37 @@ function get_total_rate(process::SIRProcess)::Float64
     return infection_rate + recovery_rate
 end
 
-function step!(process::SIRProcess)::Float64
-    if !is_active(process)
-        return Inf
-    end
-
-    total_rate = get_total_rate(process)
-    if total_rate <= 0
-        return Inf
-    end
-
-    dt = randexp(process.rng) / total_rate
-
+# Two event classes: infection (rate β·boundary, weighted by susceptible-neighbor
+# count) vs. spontaneous recovery (rate γ·#infected, uniform over infected nodes).
+# (The shared step! draws the waiting time and advances the clock.)
+@inline function _fire_event!(process::SIRProcess, total_rate::Float64)
     infection_rate = process.β * get_total_boundary(process.active_tracker)
     if rand(process.rng) < infection_rate / total_rate
-        acting_node = _weighted_sample_active(process.active_tracker, process.rng)
-        _sir_infect!(process, acting_node)
+        _sir_infect!(process, _weighted_sample_active(process.active_tracker, process.rng))
     else
-        recovering_node = _sample_infected_uniform(process)
-        _sir_recover!(process, recovering_node)
+        _sir_recover!(process, _sample_infected_uniform(process))
     end
+end
 
-    process.time  += dt
-    process.steps += 1
-
-    return dt
+function _clear_trackers!(process::SIRProcess)
+    clear_active_nodes!(process.active_tracker)
+    empty!(process.infected_nodes)
 end
 
 function reset!(process::SIRProcess,
                 initial_infected::Vector{Int};
                 rng_seed::Union{Int, Nothing} = nothing)
     validate_initial_infected(initial_infected, process.graph)
-
-    process.time  = 0.0
-    process.steps = 0
-
-    if rng_seed !== nothing
-        Random.seed!(process.rng, rng_seed)
-    end
-
-    clear_active_nodes!(process.active_tracker)
-    empty!(process.infected_nodes)
-
-    states = node_states_raw(process.graph)
-    fill!(states, state_to_int(SUSCEPTIBLE))
+    states = _reset_prologue!(process; rng_seed = rng_seed)
 
     # Mark every seed infected first, then compute susceptible-neighbor counts.
-    # Counting in the same pass would let an earlier seed see a later seed as
-    # still susceptible, leaving its boundary count stale-high.
+    # Counting in the same pass would let an earlier seed see a later seed as still
+    # susceptible, leaving its boundary count stale-high.
     infected_state = state_to_int(INFECTED)
     for node_id in initial_infected
         states[node_id] = infected_state
         push!(process.infected_nodes, node_id)
     end
-
     for node_id in initial_infected
         susceptible_count = count_neighbors_by_state(process.graph, node_id, SUSCEPTIBLE)
         add_active_node!(process.active_tracker, node_id, susceptible_count)
@@ -149,27 +114,19 @@ end
 function _sir_infect!(process::SIRProcess, acting_node::Int)
     neighbors = get_neighbors(process.graph, acting_node)
     states    = node_states_raw(process.graph)
-    susceptible_state = state_to_int(SUSCEPTIBLE)
-    infected_state    = state_to_int(INFECTED)
+    target = _random_susceptible_neighbor(neighbors, states, Int[], process.rng)
 
-    susceptible_neighbors = Int[]
-    for neighbor in neighbors
-        if states[neighbor] == susceptible_state
-            push!(susceptible_neighbors, neighbor)
-        end
-    end
-
-    if isempty(susceptible_neighbors)
+    if target == 0
         @warn "Infected node $acting_node has no susceptible neighbors but is marked active"
         remove_active_node!(process.active_tracker, acting_node)
         return
     end
 
-    target = rand(process.rng, susceptible_neighbors)
-    states[target] = infected_state
+    states[target] = state_to_int(INFECTED)
     push!(process.infected_nodes, target)
-
-    _update_active_tracking_after_sir_infection!(process, acting_node, target)
+    # Same S→I tracker maintenance as ZIM (shared helper).
+    _track_si_infection!(process.active_tracker, process.graph,
+                         get_neighbors(process.graph, target), acting_node, target)
 end
 
 function _sir_recover!(process::SIRProcess, recovering_node::Int)
@@ -180,35 +137,6 @@ function _sir_recover!(process::SIRProcess, recovering_node::Int)
     remove_active_node!(process.active_tracker, recovering_node)
     # Recovery I→R does not change any neighbor's susceptible-neighbor count,
     # so no active_tracker updates are needed for other nodes.
-end
-
-"""
-Update active tracking after a new infection — same logic as ZIM.
-
-When node `new_infected` transitions S→I:
-- `new_infected` joins the active tracker with its susceptible neighbor count
-- `attacker` loses one susceptible neighbor (the newly infected node)
-- All other infected neighbors of `new_infected` also lose one susceptible neighbor
-"""
-function _update_active_tracking_after_sir_infection!(process::SIRProcess, attacker::Int, new_infected::Int)
-    new_susceptible_count = count_neighbors_by_state(process.graph, new_infected, SUSCEPTIBLE)
-    add_active_node!(process.active_tracker, new_infected, new_susceptible_count)
-
-    current_count = get(process.active_tracker.active_nodes, attacker, 0)
-    update_active_node!(process.active_tracker, attacker, current_count - 1)
-
-    new_infected_neighbors = get_neighbors(process.graph, new_infected)
-    states = node_states_raw(process.graph)
-    infected_state = state_to_int(INFECTED)
-
-    for neighbor in new_infected_neighbors
-        if states[neighbor] == infected_state && neighbor != attacker
-            neighbor_count = get(process.active_tracker.active_nodes, neighbor, 0)
-            if neighbor_count > 0
-                update_active_node!(process.active_tracker, neighbor, neighbor_count - 1)
-            end
-        end
-    end
 end
 
 # =============================================================================
@@ -233,30 +161,12 @@ end
 # =============================================================================
 
 function get_sir_statistics(process::SIRProcess)::Dict{Symbol, Any}
-    base_stats = get_statistics(process)
-    base_stats[:β]                  = process.β
-    base_stats[:γ]                  = process.γ
-    base_stats[:basic_reproduction_number] = process.β / process.γ
-    base_stats[:escaped]            = has_escaped(process)
-    base_stats[:active_infected]    = length(process.active_tracker.active_nodes)
-    base_stats[:total_boundary_size] = get_total_boundary(process.active_tracker)
-    return base_stats
-end
-
-# =============================================================================
-# Parameter Validation
-# =============================================================================
-
-function _validate_sir_parameters(β::Float64, γ::Float64)
-    if β <= 0.0
-        throw(ArgumentError("Transmission rate β must be positive, got $β"))
-    end
-    if γ <= 0.0
-        throw(ArgumentError("Recovery rate γ must be positive, got $γ"))
-    end
-    if β > 1000.0 || γ > 1000.0
-        @warn "Very large rates (β=$β, γ=$γ) may cause numerical issues"
-    end
+    return _augment_statistics(process;
+        β = process.β,
+        γ = process.γ,
+        basic_reproduction_number = process.β / process.γ,
+        active_infected = length(process.active_tracker.active_nodes),
+        total_boundary_size = get_total_boundary(process.active_tracker))
 end
 
 # =============================================================================
@@ -293,12 +203,9 @@ function create_sir_process(graph::AbstractEpidemicGraph, β::Float64, γ::Float
 end
 
 """
-Convenience overload for creating an SIR process on a square lattice.
+Convenience overload for creating an SIR process on a square lattice. Keyword
+arguments (`boundary`, `initial_infected`, `rng_seed`) flow through to the
+graph-based method.
 """
-function create_sir_process(width::Int, height::Int, β::Float64, γ::Float64 = 1.0;
-                            boundary::Symbol = :absorbing,
-                            initial_infected::Union{Symbol, Vector{Int}} = :center,
-                            rng_seed::Union{Int, Nothing} = nothing)
-    lattice = create_square_lattice(width, height, boundary)
-    return create_sir_process(lattice, β, γ; initial_infected=initial_infected, rng_seed=rng_seed)
-end
+create_sir_process(width::Int, height::Int, β::Float64, γ::Float64 = 1.0; kwargs...) =
+    create_on_square_lattice(create_sir_process, width, height, β, γ; kwargs...)
