@@ -9,40 +9,7 @@ using Random
 using Statistics  # For mean() function
 
 # =============================================================================
-# Validation Functions
-# =============================================================================
-
-"""
-Validate and convert node list.
-
-# Arguments
-- `nodes::Vector{Int}`: List of node indices
-- `num_nodes::Int`: Total number of nodes in graph
-
-# Returns
-- `Vector{Int}`: Validated node array
-
-# Throws
-- `ArgumentError`: If node indices are invalid
-"""
-function validate_node_list(nodes::Vector{Int}, num_nodes::Int)::Vector{Int}
-    if isempty(nodes)
-        return nodes
-    end
-    
-    if any(node -> node < 1 || node > num_nodes, nodes)
-        throw(ArgumentError("Node indices must be in range [1, $num_nodes]"))
-    end
-    
-    if length(unique(nodes)) != length(nodes)
-        throw(ArgumentError("Duplicate node indices not allowed"))
-    end
-    
-    return nodes
-end
-
-# =============================================================================
-# Random Number Generation  
+# Random Number Generation
 # =============================================================================
 
 """

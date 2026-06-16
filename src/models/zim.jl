@@ -101,17 +101,6 @@ function get_total_rate(process::ZIMProcess)::Float64
     return (process.λ + process.μ) * boundary_size
 end
 
-function sample_active_node(process::ZIMProcess, rng::AbstractRNG)::Int
-    n_active = length(process.active_tracker.active_nodes)
-
-    # Use performance-optimized function with pre-allocation if active set is large
-    if n_active < 1024
-        return _weighted_sample_active(process.active_tracker, rng)
-    else
-        return _weighted_sample_active_fast(process.active_tracker, n_active, rng)
-    end
-end
-
 function step!(process::ZIMProcess)::Float64
     if !is_active(process)
         return Inf  # No active zombies
@@ -126,7 +115,7 @@ function step!(process::ZIMProcess)::Float64
     dt = randexp(process.rng) / total_rate
     
     # Sample which zombie acts (weighted by susceptible neighbor count)
-    acting_zombie = sample_active_node(process, process.rng)
+    acting_zombie = _weighted_sample_active(process.active_tracker, process.rng)
     
     # Determine outcome: infection vs kill
     if rand(process.rng) < process.infection_prob

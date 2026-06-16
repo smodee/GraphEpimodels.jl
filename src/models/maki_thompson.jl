@@ -101,15 +101,6 @@ function get_total_rate(process::MakiThompsonProcess)::Float64
     return spreading_rate + stifling_rate
 end
 
-function sample_active_node(process::MakiThompsonProcess, rng::AbstractRNG)::Int
-    n_active = length(process.spreading_tracker.active_nodes)
-    if n_active < 1024
-        return _weighted_sample_active(process.spreading_tracker, rng)
-    else
-        return _weighted_sample_active_fast(process.spreading_tracker, n_active, rng)
-    end
-end
-
 function step!(process::MakiThompsonProcess)::Float64
     if !is_active(process)
         return Inf
@@ -124,10 +115,10 @@ function step!(process::MakiThompsonProcess)::Float64
 
     spreading_rate = process.α * get_total_boundary(process.spreading_tracker)
     if rand(process.rng) < spreading_rate / total_rate
-        acting_node = sample_active_node(process, process.rng)
+        acting_node = _weighted_sample_active(process.spreading_tracker, process.rng)
         _mt_spread!(process, acting_node)
     else
-        stifling_node = _sample_stifling_node(process)
+        stifling_node = _weighted_sample_active(process.stifling_tracker, process.rng)
         _mt_stifle!(process, stifling_node)
     end
 
@@ -266,19 +257,6 @@ function _mt_stifle!(process::MakiThompsonProcess, stifling_node::Int)
                 end
             end
         end
-    end
-end
-
-# =============================================================================
-# Internal Sampling Helper
-# =============================================================================
-
-function _sample_stifling_node(process::MakiThompsonProcess)::Int
-    n_active = length(process.stifling_tracker.active_nodes)
-    if n_active < 1024
-        return _weighted_sample_active(process.stifling_tracker, process.rng)
-    else
-        return _weighted_sample_active_fast(process.stifling_tracker, n_active, process.rng)
     end
 end
 

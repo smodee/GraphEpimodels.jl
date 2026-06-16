@@ -82,15 +82,6 @@ function get_total_rate(process::SIRProcess)::Float64
     return infection_rate + recovery_rate
 end
 
-function sample_active_node(process::SIRProcess, rng::AbstractRNG)::Int
-    n_active = length(process.active_tracker.active_nodes)
-    if n_active < 1024
-        return _weighted_sample_active(process.active_tracker, rng)
-    else
-        return _weighted_sample_active_fast(process.active_tracker, n_active, rng)
-    end
-end
-
 function step!(process::SIRProcess)::Float64
     if !is_active(process)
         return Inf
@@ -105,7 +96,7 @@ function step!(process::SIRProcess)::Float64
 
     infection_rate = process.β * get_total_boundary(process.active_tracker)
     if rand(process.rng) < infection_rate / total_rate
-        acting_node = sample_active_node(process, process.rng)
+        acting_node = _weighted_sample_active(process.active_tracker, process.rng)
         _sir_infect!(process, acting_node)
     else
         recovering_node = _sample_infected_uniform(process)

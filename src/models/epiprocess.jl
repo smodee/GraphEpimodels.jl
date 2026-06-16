@@ -32,24 +32,6 @@ Examples:
 """
 abstract type SIRLikeProcess <: AbstractEpidemicProcess end
 
-"""
-Abstract type for contact-like processes where nodes transition S ⇄ I.
-
-Examples:
-- Contact Process: Birth-death process on graphs
-- SIS: SIR with immediate reinfection possibility
-"""
-abstract type ContactLikeProcess <: AbstractEpidemicProcess end
-
-"""
-Abstract type for voter-like processes with competing states/opinions.
-
-Examples:
-- Biased Voter: Asymmetric influence between states
-- Voter Model: Symmetric opinion dynamics
-"""
-abstract type VoterLikeProcess <: AbstractEpidemicProcess end
-
 # =============================================================================
 # Required Interface Methods (must be implemented by all process types)
 # =============================================================================
@@ -396,13 +378,6 @@ function has_active_nodes(tracker::DictActiveTracker)::Bool
 end
 
 """
-Sample an active node randomly.
-"""
-function sample_active_node(tracker::DictActiveTracker, rng::AbstractRNG)::Int
-    error("sample_active_node must be implemented by concrete process type")
-end
-
-"""
 Clear all active nodes.
 """
 function clear_active_nodes!(tracker::DictActiveTracker)
@@ -412,33 +387,6 @@ end
 # =============================================================================
 # Internal Sampling Helpers (Not Exported)
 # =============================================================================
-# Add these functions to epiprocess.jl, after the DictActiveTracker methods
-
-"""
-Uniform sampling from active nodes.
-
-Selects an active node uniformly at random, regardless of neighbor counts.
-Used by processes where all active nodes have equal event rates.
-
-# Arguments
-- `tracker::DictActiveTracker`: Active node tracker
-- `rng::AbstractRNG`: Random number generator
-
-# Returns
-- `Int`: Randomly selected active node ID
-
-# Throws
-- `ArgumentError`: If no active nodes available
-"""
-function _uniform_sample_active(tracker::DictActiveTracker, rng::AbstractRNG)::Int
-    if isempty(tracker.active_nodes)
-        throw(ArgumentError("No active nodes to sample from"))
-    end
-    
-    # Simple uniform sampling from dictionary keys
-    active_nodes = collect(keys(tracker.active_nodes))
-    return active_nodes[rand(rng, 1:length(active_nodes))]
-end
 
 """
 Weighted sampling from active nodes based on susceptible neighbor counts.

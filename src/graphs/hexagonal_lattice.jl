@@ -207,12 +207,8 @@ julia> lat = create_hexagonal_lattice(20, 20)
 """
 function create_hexagonal_lattice(width::Int, height::Int,
                                   boundary::Symbol = :absorbing)::HexagonalLattice
-    boundary_condition = if boundary == :absorbing
-        ABSORBING
-    elseif boundary == :periodic
-        throw(ArgumentError("HexagonalLattice does not support :periodic yet"))
-    else
-        throw(ArgumentError("Unknown boundary type: $boundary. Use :absorbing"))
-    end
-    return HexagonalLattice(width, height, boundary_condition)
+    # Reuse the shared symbol→enum converter (graphs/hypercubic_lattice.jl); the
+    # constructor rejects the resulting PERIODIC with a HexagonalLattice-specific
+    # "periodic tiling deferred" message.
+    return HexagonalLattice(width, height, _boundary_from_symbol(boundary))
 end

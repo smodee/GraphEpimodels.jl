@@ -53,34 +53,3 @@ end
 # guard turns a forced mismatch into a clear error instead of a `cell_polygons`
 # failure deep in rendering.
 can_visualize(viz::LatticeVisualizer, graph::AbstractLatticeGraph)::Bool = has_cells(graph)
-
-# =============================================================================
-# Optional Interface Implementation
-# =============================================================================
-
-function get_visualization_settings(viz::LatticeVisualizer)::Dict{Symbol, Any}
-    return Dict{Symbol, Any}(
-        :color_scheme => viz.color_scheme,
-        :show_boundary => viz.show_boundary,
-        :figure_size => viz.figure_size,
-        :show_grid => viz.show_grid
-    )
-end
-
-function set_visualization_settings!(viz::LatticeVisualizer, settings::Dict{Symbol, Any})
-    for (key, value) in settings
-        if key == :color_scheme
-            value ∈ available_color_schemes() ||
-                throw(ArgumentError("Unknown color scheme: $value"))
-            viz.color_scheme = value
-        elseif key == :show_boundary
-            viz.show_boundary = value
-        elseif key == :figure_size
-            viz.figure_size = value
-        elseif key == :show_grid
-            viz.show_grid = value
-        else
-            @warn "Unknown setting: $key"
-        end
-    end
-end

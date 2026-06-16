@@ -108,15 +108,6 @@ function get_total_rate(process::ChaseEscapeProcess)::Float64
     return spread_rate + catch_rate
 end
 
-function sample_active_node(process::ChaseEscapeProcess, rng::AbstractRNG)::Int
-    n_active = length(process.spread_tracker.active_nodes)
-    if n_active < 1024
-        return _weighted_sample_active(process.spread_tracker, rng)
-    else
-        return _weighted_sample_active_fast(process.spread_tracker, n_active, rng)
-    end
-end
-
 function step!(process::ChaseEscapeProcess)::Float64
     if !is_active(process)
         return Inf
@@ -131,10 +122,10 @@ function step!(process::ChaseEscapeProcess)::Float64
 
     spread_rate = process.λ * get_total_boundary(process.spread_tracker)
     if rand(process.rng) < spread_rate / total_rate
-        acting_node = sample_active_node(process, process.rng)
+        acting_node = _weighted_sample_active(process.spread_tracker, process.rng)
         _ce_spread!(process, acting_node)
     else
-        caught_node = _sample_catch_node(process)
+        caught_node = _weighted_sample_active(process.catch_tracker, process.rng)
         _ce_catch!(process, caught_node)
     end
 
@@ -261,19 +252,6 @@ function _ce_catch!(process::ChaseEscapeProcess, caught_node::Int)
             catch_w = get(process.catch_tracker.active_nodes, neighbor, 0)
             update_active_node!(process.catch_tracker, neighbor, catch_w + 1)
         end
-    end
-end
-
-# =============================================================================
-# Internal Sampling Helper
-# =============================================================================
-
-function _sample_catch_node(process::ChaseEscapeProcess)::Int
-    n_active = length(process.catch_tracker.active_nodes)
-    if n_active < 1024
-        return _weighted_sample_active(process.catch_tracker, process.rng)
-    else
-        return _weighted_sample_active_fast(process.catch_tracker, n_active, process.rng)
     end
 end
 
