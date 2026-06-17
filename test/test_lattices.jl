@@ -307,3 +307,39 @@ end
         @test a == b  # ...therefore identical selection for the same draw
     end
 end
+
+# The sampler no longer sorts per call: it reads `sorted_nodes`, which the
+# add/update/remove mutators must keep equal to sort(collect(keys(active_nodes)))
+# at all times. A drifted invariant would silently corrupt weighted selection, so
+# check it directly under a churn of every mutator path (insert, weight-only
+# update, update-to-zero removal, explicit removal, re-insert, overwrite).
+@testset "active tracker maintains sorted_nodes invariant" begin
+    t = GraphEpimodels.DictActiveTracker()
+    canonical(tr) = sort(collect(keys(tr.active_nodes)))
+    @test t.sorted_nodes == canonical(t)
+
+    GraphEpimodels.add_active_node!(t, 50, 2)
+    GraphEpimodels.add_active_node!(t, 10, 1)
+    GraphEpimodels.add_active_node!(t, 30, 3)
+    GraphEpimodels.add_active_node!(t, 20, 1)
+    @test t.sorted_nodes == canonical(t) == [10, 20, 30, 50]
+
+    GraphEpimodels.update_active_node!(t, 30, 5)   # weight-only: order unchanged
+    @test t.sorted_nodes == canonical(t) == [10, 20, 30, 50]
+
+    GraphEpimodels.add_active_node!(t, 50, 4)       # overwrite existing: no dup insert
+    @test t.sorted_nodes == canonical(t) == [10, 20, 30, 50]
+
+    GraphEpimodels.update_active_node!(t, 20, 0)    # drop to inactive via update
+    @test t.sorted_nodes == canonical(t) == [10, 30, 50]
+
+    GraphEpimodels.remove_active_node!(t, 10)       # explicit removal
+    GraphEpimodels.remove_active_node!(t, 999)      # absent: no-op, stays consistent
+    @test t.sorted_nodes == canonical(t) == [30, 50]
+
+    GraphEpimodels.update_active_node!(t, 5, 2)     # newly active via update inserts in order
+    @test t.sorted_nodes == canonical(t) == [5, 30, 50]
+
+    GraphEpimodels.clear_active_nodes!(t)
+    @test isempty(t.sorted_nodes) && isempty(t.active_nodes)
+end

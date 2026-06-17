@@ -42,14 +42,34 @@ mutable struct DictActiveTracker <: ActiveNodeTracker
     # sum was pure per-step overhead. Invariant: total_weight == sum(values(active_nodes)).
     total_weight::Int
 
-    # Scratch buffers reused by _weighted_sample_active so that weighted sampling
-    # allocates nothing on the hot path. A tracker is owned by a single process
-    # (and thus a single thread during threaded runs), so reusing these across
-    # calls is safe without any locking. See issues #1 / #3.
-    nodes_buf::Vector{Int}        # idx → node_id
+    # Active node ids held in ascending (canonical) order, maintained incrementally
+    # by the add/remove/update/clear mutators below. The weighted sampler reads this
+    # directly instead of collecting the Dict keys and `sort!`-ing them on every
+    # call, dropping the per-step sampling cost from O(active log active) to
+    # O(active) (the cumulative-weight pass) while keeping the same deterministic,
+    # order-independent selection. Invariant: `sorted_nodes` is exactly
+    # `sort(collect(keys(active_nodes)))`.
+    #
+    # `cumw_buf` is reused scratch for the cumulative-weight array so sampling still
+    # allocates nothing on the hot path. A tracker is owned by a single process (and
+    # thus a single thread during threaded runs), so reusing it across calls — and
+    # mutating `sorted_nodes` in place — is safe without any locking. See issues #1 / #3.
+    sorted_nodes::Vector{Int}     # active node ids, ascending (canonical order)
     cumw_buf::Vector{Int}         # idx → cumulative weight up to and including idx
 
     DictActiveTracker() = new(Dict{Int, Int}(), 0, Int[], Int[])
+end
+
+# Keep `sorted_nodes` canonical under membership changes. Both are O(active) in the
+# worst case (element shift), matching the cumulative-weight pass the sampler already
+# pays — so the sort's log factor is removed without adding a higher-order cost.
+@inline function _sorted_insert!(v::Vector{Int}, node_id::Int)
+    insert!(v, searchsortedfirst(v, node_id), node_id)
+end
+
+@inline function _sorted_delete!(v::Vector{Int}, node_id::Int)
+    # Caller guarantees node_id is present, so searchsortedfirst lands on it.
+    deleteat!(v, searchsortedfirst(v, node_id))
 end
 
 """
@@ -67,6 +87,7 @@ function add_active_node!(tracker::DictActiveTracker, node_id::Int, neighbor_cou
         old = get(tracker.active_nodes, node_id, 0)
         tracker.active_nodes[node_id] = neighbor_count
         tracker.total_weight += neighbor_count - old
+        old == 0 && _sorted_insert!(tracker.sorted_nodes, node_id)  # newly active
     end
 end
 
@@ -76,7 +97,9 @@ Remove a node from active tracking.
 function remove_active_node!(tracker::DictActiveTracker, node_id::Int)
     # pop! returns the removed weight (0 if absent), so the total stays in sync
     # whether or not the node was present.
-    tracker.total_weight -= pop!(tracker.active_nodes, node_id, 0)
+    removed = pop!(tracker.active_nodes, node_id, 0)
+    tracker.total_weight -= removed
+    removed > 0 && _sorted_delete!(tracker.sorted_nodes, node_id)  # was active
 end
 
 """
@@ -87,16 +110,19 @@ function update_active_node!(tracker::DictActiveTracker, node_id::Int, new_count
         old = get(tracker.active_nodes, node_id, 0)
         tracker.active_nodes[node_id] = new_count
         tracker.total_weight += new_count - old
+        old == 0 && _sorted_insert!(tracker.sorted_nodes, node_id)  # newly active
     else
-        tracker.total_weight -= pop!(tracker.active_nodes, node_id, 0)
+        removed = pop!(tracker.active_nodes, node_id, 0)
+        tracker.total_weight -= removed
+        removed > 0 && _sorted_delete!(tracker.sorted_nodes, node_id)  # dropped to inactive
     end
 end
 
 """
-Get all active nodes.
+Get all active nodes (a fresh copy, in ascending/canonical order).
 """
 function get_active_nodes(tracker::DictActiveTracker)::Vector{Int}
-    return collect(keys(tracker.active_nodes))
+    return copy(tracker.sorted_nodes)
 end
 
 """
@@ -119,6 +145,7 @@ Clear all active nodes.
 """
 function clear_active_nodes!(tracker::DictActiveTracker)
     empty!(tracker.active_nodes)
+    empty!(tracker.sorted_nodes)
     tracker.total_weight = 0
 end
 
@@ -131,14 +158,14 @@ Weighted sampler over the active set: selects a node with probability proportion
 to its susceptible-neighbor count. Critical for processes like ZIM where event
 rates depend on neighbor counts.
 
-Builds a cumulative-weight array and binary-searches it (`O(n)` to fill plus
-`O(log n)` to sample). Two properties matter:
+Builds a cumulative-weight array over the active set and binary-searches it
+(`O(active)` to fill plus `O(log active)` to sample). Two properties matter:
 
-1. **Allocation-free.** The node/cumulative-weight scratch arrays live on the
-   tracker and are resized in place, so this allocates nothing on the hot path.
-   It runs on every Gillespie step of every simulation; per-step heap allocation
-   here previously caused severe multithreaded GC pressure that serialized worker
-   threads (issues #1 and #3).
+1. **Allocation-free.** The canonical node array (`sorted_nodes`) and the
+   cumulative-weight scratch (`cumw_buf`) live on the tracker and are resized in
+   place, so this allocates nothing on the hot path. It runs on every Gillespie
+   step of every simulation; per-step heap allocation here previously caused severe
+   multithreaded GC pressure that serialized worker threads (issues #1 and #3).
 
 2. **Deterministic.** Nodes are sampled in a canonical order (ascending node id),
    NOT in `Dict` iteration order. A `Dict`'s iteration order depends on its
@@ -147,10 +174,12 @@ Builds a cumulative-weight array and binary-searches it (`O(n)` to fill plus
    simulations, or per-thread processes that each ran a different block of work —
    would otherwise map the same random draw onto different nodes. That made
    results depend on execution mode (serial vs. threaded) for a fixed seed.
-   Sorting by node id removes the dependence; QuickSort is in-place so this stays
-   allocation-free.
 
-The tracker is owned by a single process, so buffer reuse needs no locking.
+`sorted_nodes` is kept in ascending order incrementally by the tracker mutators,
+so this sampler no longer collects the Dict keys and `sort!`s them on every call —
+the per-step cost drops from O(active log active) to O(active) (just the cumulative
+pass) while the selection stays bit-identical. The tracker is owned by a single
+process, so reading/reusing its buffers needs no locking.
 
 # Arguments
 - `tracker::DictActiveTracker`: Active node tracker with neighbor counts
@@ -163,35 +192,20 @@ The tracker is owned by a single process, so buffer reuse needs no locking.
 - `ArgumentError`: If no active nodes available
 """
 function _weighted_sample_active(tracker::DictActiveTracker, rng::AbstractRNG)::Int
-    n_active = length(tracker.active_nodes)
+    nodes = tracker.sorted_nodes
+    n_active = length(nodes)
     if n_active == 0
         throw(ArgumentError("No active nodes to sample from"))
     end
 
     if n_active == 1
-        # first(d::Dict) returns a Pair{K,V}; .first extracts the key without
-        # allocating a KeySet wrapper (unlike first(keys(d))).
-        return first(tracker.active_nodes).first
+        return @inbounds nodes[1]
     end
 
-    # Reuse the tracker's scratch buffers instead of allocating fresh vectors.
-    nodes = tracker.nodes_buf
+    # `sorted_nodes` is already in canonical (ascending) order, so we only need to
+    # build cumulative weights over it — no per-call collect or sort.
     cumw = tracker.cumw_buf
-    resize!(nodes, n_active)
     resize!(cumw, n_active)
-
-    # Collect node ids, then sort into a canonical order so sampling does not
-    # depend on Dict iteration order (see the docstring). QuickSort is in-place.
-    # Iterate the Dict directly (not via keys()) to avoid allocating a KeySet
-    # wrapper object on every call — the actual 16 B/step found in issue #11.
-    i = 1
-    for (node_id, _) in tracker.active_nodes
-        nodes[i] = node_id
-        i += 1
-    end
-    sort!(nodes; alg = QuickSort)
-
-    # Build cumulative weights in canonical order.
     running = 0
     @inbounds for j in 1:n_active
         running += tracker.active_nodes[nodes[j]]
