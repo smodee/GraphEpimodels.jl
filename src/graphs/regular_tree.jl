@@ -102,30 +102,9 @@ end
 # Core Interface Implementation (Required Methods)
 # =============================================================================
 
-@inline function num_nodes(tree::RegularTree)::Int
-    return tree.n_nodes
-end
-
-function node_states_raw(tree::RegularTree)::Vector{Int8}
-    return tree.states
-end
-
-function set_node_states_raw!(tree::RegularTree, states::Vector{Int8})
-    if length(states) != num_nodes(tree)
-        throw(ArgumentError("Expected $(num_nodes(tree)) states, got $(length(states))"))
-    end
-    tree.states = states
-end
-
-function get_neighbors(tree::RegularTree, node_id::Int)::Vector{Int}
-    return get_neighbors!(Int[], tree, node_id)
-end
-
 function get_neighbors!(neighbors::Vector{Int}, tree::RegularTree, node_id::Int)::Vector{Int}
+    _check_node(tree, node_id)
     n = tree.n_nodes
-    if node_id < 1 || node_id > n
-        throw(BoundsError("Node ID $node_id out of range [1, $n]"))
-    end
     empty!(neighbors)
 
     # Parent: every node except the root has one.
@@ -150,10 +129,8 @@ end
 # children is a leaf (degree 1, just its parent); other non-root nodes have
 # `branching` children + 1 parent.
 @inline function get_node_degree(tree::RegularTree, node_id::Int)::Int
+    _check_node(tree, node_id)
     n = tree.n_nodes
-    if node_id < 1 || node_id > n
-        throw(BoundsError("Node ID $node_id out of range [1, $n]"))
-    end
     node_id == 1 && return tree.height == 1 ? 0 : tree.root_children
     _first_child(tree, node_id) > n && return 1
     return tree.branching + 1

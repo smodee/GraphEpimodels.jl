@@ -40,30 +40,9 @@ end
 # Core Interface Implementation (Required Methods)
 # =============================================================================
 
-@inline function num_nodes(graph::PathGraph)::Int
-    return graph.n_nodes
-end
-
-function node_states_raw(graph::PathGraph)::Vector{Int8}
-    return graph.states
-end
-
-function set_node_states_raw!(graph::PathGraph, states::Vector{Int8})
-    if length(states) != num_nodes(graph)
-        throw(ArgumentError("Expected $(num_nodes(graph)) states, got $(length(states))"))
-    end
-    graph.states = states
-end
-
-function get_neighbors(graph::PathGraph, node_id::Int)::Vector{Int}
-    return get_neighbors!(Int[], graph, node_id)
-end
-
 function get_neighbors!(neighbors::Vector{Int}, graph::PathGraph, node_id::Int)::Vector{Int}
+    _check_node(graph, node_id)
     n = graph.n_nodes
-    if node_id < 1 || node_id > n
-        throw(BoundsError("Node ID $node_id out of range [1, $n]"))
-    end
     empty!(neighbors)
     node_id > 1 && push!(neighbors, node_id - 1)
     node_id < n && push!(neighbors, node_id + 1)
@@ -72,10 +51,8 @@ end
 
 # Degree: 1 at the two endpoints, 2 in the interior.
 @inline function get_node_degree(graph::PathGraph, node_id::Int)::Int
+    _check_node(graph, node_id)
     n = graph.n_nodes
-    if node_id < 1 || node_id > n
-        throw(BoundsError("Node ID $node_id out of range [1, $n]"))
-    end
     return (node_id > 1) + (node_id < n)
 end
 
@@ -89,10 +66,8 @@ indices directly instead of materializing a neighbor list.
 """
 function count_neighbors_by_state(graph::PathGraph, node_id::Int,
                                   target_state::NodeState)::Int
+    _check_node(graph, node_id)
     n = graph.n_nodes
-    if node_id < 1 || node_id > n
-        throw(BoundsError("Node ID $node_id out of range [1, $n]"))
-    end
     states = graph.states
     target_int = state_to_int(target_state)
     count = 0

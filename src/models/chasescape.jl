@@ -74,7 +74,7 @@ mutable struct ChaseEscapeProcess{G<:AbstractEpidemicGraph, R<:AbstractRNG} <: S
     function ChaseEscapeProcess(graph::G, λ::Float64, μ::Float64;
                                 ghost::Bool = true,
                                 rng::R = Random.default_rng()) where {G<:AbstractEpidemicGraph, R<:AbstractRNG}
-        _validate_chase_escape_parameters(λ, μ)
+        _validate_rates("Red spread rate λ" => λ, "Blue catch rate μ" => μ)
         new{G,R}(graph, λ, μ, ghost,
             DictActiveTracker(), DictActiveTracker(),
             0.0, 0, rng)
@@ -84,18 +84,6 @@ end
 # =============================================================================
 # Required Interface Implementation
 # =============================================================================
-
-@inline function get_graph(process::ChaseEscapeProcess)::AbstractEpidemicGraph
-    return process.graph
-end
-
-@inline function current_time(process::ChaseEscapeProcess)::Float64
-    return process.time
-end
-
-@inline function step_count(process::ChaseEscapeProcess)::Int
-    return process.steps
-end
 
 function is_active(process::ChaseEscapeProcess)::Bool
     return get_total_boundary(process.spread_tracker) > 0 ||
@@ -108,39 +96,21 @@ function get_total_rate(process::ChaseEscapeProcess)::Float64
     return spread_rate + catch_rate
 end
 
-function sample_active_node(process::ChaseEscapeProcess, rng::AbstractRNG)::Int
-    n_active = length(process.spread_tracker.active_nodes)
-    if n_active < 1024
-        return _weighted_sample_active(process.spread_tracker, rng)
+# Two event classes: red spread W→R (rate λ·spread-boundary) vs. blue catch R→B
+# (rate μ·catch-boundary), each weighted-sampled from its own tracker. (The shared
+# step! draws the waiting time and advances the clock.)
+@inline function _fire_event!(process::ChaseEscapeProcess, total_rate::Float64)
+    spread_rate = process.λ * get_total_boundary(process.spread_tracker)
+    if rand(process.rng) < spread_rate / total_rate
+        _ce_spread!(process, _weighted_sample_active(process.spread_tracker, process.rng))
     else
-        return _weighted_sample_active_fast(process.spread_tracker, n_active, rng)
+        _ce_catch!(process, _weighted_sample_active(process.catch_tracker, process.rng))
     end
 end
 
-function step!(process::ChaseEscapeProcess)::Float64
-    if !is_active(process)
-        return Inf
-    end
-
-    total_rate = get_total_rate(process)
-    if total_rate <= 0.0
-        return Inf
-    end
-
-    dt = randexp(process.rng) / total_rate
-
-    spread_rate = process.λ * get_total_boundary(process.spread_tracker)
-    if rand(process.rng) < spread_rate / total_rate
-        acting_node = sample_active_node(process, process.rng)
-        _ce_spread!(process, acting_node)
-    else
-        caught_node = _sample_catch_node(process)
-        _ce_catch!(process, caught_node)
-    end
-
-    process.time  += dt
-    process.steps += 1
-    return dt
+function _clear_trackers!(process::ChaseEscapeProcess)
+    clear_active_nodes!(process.spread_tracker)
+    clear_active_nodes!(process.catch_tracker)
 end
 
 function reset!(process::ChaseEscapeProcess,
@@ -149,19 +119,7 @@ function reset!(process::ChaseEscapeProcess,
                 rng_seed::Union{Int, Nothing} = nothing)
     validate_initial_infected(initial_red, process.graph)
     _validate_blue_seeds(initial_blue, initial_red, process.graph)
-
-    process.time  = 0.0
-    process.steps = 0
-
-    if rng_seed !== nothing
-        Random.seed!(process.rng, rng_seed)
-    end
-
-    clear_active_nodes!(process.spread_tracker)
-    clear_active_nodes!(process.catch_tracker)
-
-    states = node_states_raw(process.graph)
-    fill!(states, state_to_int(SUSCEPTIBLE))
+    states = _reset_prologue!(process; rng_seed = rng_seed)
 
     # Place blue seeds first so reds see their real blue neighbours.
     removed_state  = state_to_int(REMOVED)
@@ -195,27 +153,19 @@ end
 # =============================================================================
 
 function _ce_spread!(process::ChaseEscapeProcess, acting_node::Int)
-    neighbors         = get_neighbors(process.graph, acting_node)
-    states            = node_states_raw(process.graph)
-    susceptible_state = state_to_int(SUSCEPTIBLE)
-    infected_state    = state_to_int(INFECTED)
+    neighbors = get_neighbors(process.graph, acting_node)
+    states    = node_states_raw(process.graph)
+    # White nodes are SUSCEPTIBLE in the S/I/R encoding, so a "white neighbour" is a
+    # susceptible neighbour — the shared picker applies directly.
+    target = _random_susceptible_neighbor(neighbors, states, Int[], process.rng)
 
-    white_neighbors = Int[]
-    for neighbor in neighbors
-        if states[neighbor] == susceptible_state
-            push!(white_neighbors, neighbor)
-        end
-    end
-
-    if isempty(white_neighbors)
+    if target == 0
         @warn "Red node $acting_node has no white neighbours but is in spread tracker"
         remove_active_node!(process.spread_tracker, acting_node)
         return
     end
 
-    target = rand(process.rng, white_neighbors)
-    states[target] = infected_state
-
+    states[target] = state_to_int(INFECTED)
     _update_tracking_after_ce_spread!(process, target)
 end
 
@@ -265,49 +215,22 @@ function _ce_catch!(process::ChaseEscapeProcess, caught_node::Int)
 end
 
 # =============================================================================
-# Internal Sampling Helper
-# =============================================================================
-
-function _sample_catch_node(process::ChaseEscapeProcess)::Int
-    n_active = length(process.catch_tracker.active_nodes)
-    if n_active < 1024
-        return _weighted_sample_active(process.catch_tracker, process.rng)
-    else
-        return _weighted_sample_active_fast(process.catch_tracker, n_active, process.rng)
-    end
-end
-
-# =============================================================================
 # Chase-escape–Specific Statistics
 # =============================================================================
 
 function get_chase_escape_statistics(process::ChaseEscapeProcess)::Dict{Symbol, Any}
-    base_stats = get_statistics(process)
-    base_stats[:λ]               = process.λ
-    base_stats[:μ]               = process.μ
-    base_stats[:ghost]           = process.ghost
-    base_stats[:escaped]         = has_escaped(process)
-    base_stats[:active_red]      = length(process.spread_tracker.active_nodes)
-    base_stats[:spread_boundary] = get_total_boundary(process.spread_tracker)
-    base_stats[:catch_boundary]  = get_total_boundary(process.catch_tracker)
-    return base_stats
+    return _augment_statistics(process;
+        λ = process.λ,
+        μ = process.μ,
+        ghost = process.ghost,
+        active_red = length(process.spread_tracker.active_nodes),
+        spread_boundary = get_total_boundary(process.spread_tracker),
+        catch_boundary = get_total_boundary(process.catch_tracker))
 end
 
 # =============================================================================
-# Parameter / Seed Validation
+# Seed Validation
 # =============================================================================
-
-function _validate_chase_escape_parameters(λ::Float64, μ::Float64)
-    if λ <= 0.0
-        throw(ArgumentError("Red spread rate λ must be positive, got $λ"))
-    end
-    if μ <= 0.0
-        throw(ArgumentError("Blue catch rate μ must be positive, got $μ"))
-    end
-    if λ > 1000.0 || μ > 1000.0
-        @warn "Very large rates (λ=$λ, μ=$μ) may cause numerical issues"
-    end
-end
 
 function _validate_blue_seeds(initial_blue::Vector{Int},
                               initial_red::Vector{Int},
@@ -369,18 +292,8 @@ end
 
 """
 Convenience overload for creating a Chase-Escape process on a square lattice.
+Keyword arguments (`ghost`, `boundary`, `initial_red`, `initial_blue`, `rng_seed`)
+flow through to the graph-based method.
 """
-function create_chase_escape_process(width::Int, height::Int,
-                                     λ::Float64, μ::Float64 = 1.0;
-                                     ghost::Bool = true,
-                                     boundary::Symbol = :absorbing,
-                                     initial_red::Union{Symbol, Vector{Int}} = :center,
-                                     initial_blue::Vector{Int} = Int[],
-                                     rng_seed::Union{Int, Nothing} = nothing)
-    lattice = create_square_lattice(width, height, boundary)
-    return create_chase_escape_process(lattice, λ, μ;
-                                       ghost        = ghost,
-                                       initial_red  = initial_red,
-                                       initial_blue = initial_blue,
-                                       rng_seed     = rng_seed)
-end
+create_chase_escape_process(width::Int, height::Int, λ::Float64, μ::Float64 = 1.0; kwargs...) =
+    create_on_square_lattice(create_chase_escape_process, width, height, λ, μ; kwargs...)

@@ -124,20 +124,6 @@ end
 # Core Interface Implementation (Required Methods)
 # =============================================================================
 
-@inline num_nodes(lattice::HypercubicLattice)::Int = lattice.n_nodes
-
-node_states_raw(lattice::HypercubicLattice)::Vector{Int8} = lattice.states
-
-function set_node_states_raw!(lattice::HypercubicLattice, states::Vector{Int8})
-    if length(states) != num_nodes(lattice)
-        throw(ArgumentError("Expected $(num_nodes(lattice)) states, got $(length(states))"))
-    end
-    lattice.states = states
-end
-
-get_neighbors(lattice::HypercubicLattice, node_id::Int)::Vector{Int} =
-    get_neighbors!(Int[], lattice, node_id)
-
 # `get_neighbors!` and `count_neighbors_by_state` are `@generated` so the per-axis
 # work is emitted as `D` straight-line statements (`Base.Cartesian.@nexprs`) with
 # literal tuple indices, rather than a runtime `for k in 1:D` loop. For d=2 this
@@ -167,8 +153,6 @@ get_neighbors(lattice::HypercubicLattice, node_id::Int)::Vector{Int} =
         return neighbors
     end
 end
-
-get_boundary_nodes(lattice::HypercubicLattice)::Vector{Int} = copy(lattice.boundary_nodes)
 
 # =============================================================================
 # Performance-Optimized Neighbor Counting (simulation hot path)

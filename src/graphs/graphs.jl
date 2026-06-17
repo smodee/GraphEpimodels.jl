@@ -210,6 +210,49 @@ function has_boundary(graph::AbstractEpidemicGraph)::Bool
 end
 
 # =============================================================================
+# Shared AbstractImplicitGraph / AbstractLatticeGraph implementation
+# =============================================================================
+#
+# Every implicit graph (the structured graphs and the lattices) follows one field
+# convention: an `n_nodes::Int` node count and a `states::Vector{Int8}` state
+# vector, with neighbors computed on demand by the type's own `get_neighbors!`.
+# These shared methods supply the boilerplate that each such type would otherwise
+# repeat verbatim, so a concrete type only implements what actually differs — its
+# `get_neighbors!` rule and any optimized `count_neighbors_by_state` / geometry. A
+# type that does not follow the convention just defines its own methods (as
+# `AdjacencyGraph` does).
+
+@inline num_nodes(graph::AbstractImplicitGraph)::Int = graph.n_nodes
+
+node_states_raw(graph::AbstractImplicitGraph)::Vector{Int8} = graph.states
+
+function set_node_states_raw!(graph::AbstractImplicitGraph, states::Vector{Int8})
+    if length(states) != num_nodes(graph)
+        throw(ArgumentError("Expected $(num_nodes(graph)) states, got $(length(states))"))
+    end
+    graph.states = states
+end
+
+# Allocating neighbor query: fill a fresh buffer via the type's `get_neighbors!`.
+get_neighbors(graph::AbstractImplicitGraph, node_id::Int)::Vector{Int} =
+    get_neighbors!(Int[], graph, node_id)
+
+"""
+Throw `BoundsError` unless `node_id` is a valid 1-indexed node of `graph`. Shared
+guard for the on-demand neighbor / degree routines of implicit graphs.
+"""
+@inline function _check_node(graph::AbstractImplicitGraph, node_id::Int)
+    n = num_nodes(graph)
+    if node_id < 1 || node_id > n
+        throw(BoundsError("Node ID $node_id out of range [1, $n]"))
+    end
+    return nothing
+end
+
+# Lattices additionally precompute their perimeter (empty for periodic boundaries).
+get_boundary_nodes(lattice::AbstractLatticeGraph)::Vector{Int} = copy(lattice.boundary_nodes)
+
+# =============================================================================
 # Geometry Interface (Optional - consumed by the visualization layer)
 # =============================================================================
 #
@@ -312,6 +355,22 @@ function _fibonacci_sphere(n::Int)::Matrix{Float64}
         pos[1, i + 1] = r * cos(θ)
         pos[2, i + 1] = y
         pos[3, i + 1] = r * sin(θ)
+    end
+    return pos
+end
+
+"""
+Evenly spaced points on the unit circle: returns a `2 × n` matrix whose column `i`
+is `(cos θ_i, sin θ_i)` with `θ_i = 2π(i-1)/n`. The 2D analogue of
+[`_fibonacci_sphere`](@ref), shared by the closed-form planar layouts (complete
+graph, cycle, and a star's leaf ring).
+"""
+function _circle_layout(n::Int)::Matrix{Float64}
+    pos = Matrix{Float64}(undef, 2, n)
+    @inbounds for i in 1:n
+        θ = 2π * (i - 1) / n
+        pos[1, i] = cos(θ)
+        pos[2, i] = sin(θ)
     end
     return pos
 end

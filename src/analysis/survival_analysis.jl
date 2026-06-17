@@ -66,7 +66,11 @@ end
 # =============================================================================
 
 """
-Estimate survival probability using threading for maximum performance with minimal memory.
+Estimate survival probability by Monte Carlo, optionally multithreaded.
+
+Runs `num_simulations` independent seeded simulations and reports the fraction that
+"survive" under `criterion`. MINIMAL mode returns just the probability and counts;
+DETAILED additionally returns survival-time and final-size distributions.
 
 # Arguments
 - `process_factory::Function`: Function that creates a fresh process (no arguments)
@@ -113,190 +117,109 @@ function estimate_survival_probability(
         throw(ArgumentError("PersistenceCriterion requires finite max_time"))
     end
 
-    if use_threading && Threads.nthreads() > 1
-        return _estimate_survival_threaded(
-            process_factory, initial_infected, criterion,
-            num_simulations, max_time, max_steps, mode, start_seed
-        )
-    else
-        return _estimate_survival_serial(
-            process_factory, initial_infected, criterion,
-            num_simulations, max_time, max_steps, mode, start_seed
-        )
-    end
+    # Stopping a run early once it escapes is only valid when we do not need the
+    # full trajectory: in MINIMAL mode with EscapeCriterion, survival is already
+    # decided the moment the infection escapes, so we can stop. In DETAILED mode we
+    # must run to completion, otherwise the reported final size / survival time
+    # would be truncated.
+    stop_on_escape = (mode == MINIMAL) && (criterion isa EscapeCriterion)
+
+    # One outcome triple per simulation. The per-iteration body is shared by the
+    # threaded and serial fillers; mode only affects the final summary.
+    results = Vector{TrialOutcome}(undef, num_simulations)
+    filler! = (use_threading && Threads.nthreads() > 1) ?
+        _fill_trials_threaded! : _fill_trials_serial!
+    filler!(results, process_factory, initial_infected, criterion,
+            max_time, max_steps, start_seed, stop_on_escape)
+
+    return _summarize_survival(results, num_simulations, mode)
 end
 
-"""Threading implementation with thread-local process reuse and seed control"""
-function _estimate_survival_threaded(
-    process_factory::Function,
-    initial_infected::Vector{Int},
-    criterion::SurvivalCriterion,
-    num_simulations::Int,
-    max_time::Float64,
-    max_steps::Int,
-    mode::AnalysisMode,
-    start_seed::Int
-)::Dict{Symbol, Any}
+"""Outcome of one survival trial: did it survive, at what time, and final cluster size."""
+const TrialOutcome = NamedTuple{(:survived, :time, :size), Tuple{Bool, Float64, Int}}
 
+"""
+Run one seeded simulation and return its [`TrialOutcome`](@ref). This is the single
+per-iteration body shared by the threaded and serial fillers (and by both analysis
+modes); the orchestrators differ only in scheduling and in what they aggregate.
+"""
+function _run_trial!(process, initial_infected, criterion::SurvivalCriterion,
+                     seed::Int, max_time::Float64, max_steps::Int,
+                     stop_on_escape::Bool)::TrialOutcome
+    reset!(process, initial_infected; rng_seed = seed)
+    sim_results = run_simulation(process; max_time = max_time, max_steps = max_steps,
+                                 stop_on_escape = stop_on_escape)
+    survived = evaluate_survival(process, criterion, sim_results)
+    return (survived = survived,
+            time = survived ? sim_results[:time] : NaN,
+            size = get_cluster_size(process))
+end
+
+"""
+Fill `results` by running the trials across threads, one dedicated process per
+thread. NOTE: the loop MUST use `:static` scheduling. Indexing the process pool by
+`threadid()` is only safe when iterations are statically pinned to threads; under
+the default `:dynamic` schedule `threadid()` is not stable across yield points, so
+a migrated task could alias another's process and corrupt results.
+"""
+function _fill_trials_threaded!(results::Vector{TrialOutcome}, process_factory::Function,
+                                initial_infected::Vector{Int}, criterion::SurvivalCriterion,
+                                max_time::Float64, max_steps::Int, start_seed::Int,
+                                stop_on_escape::Bool)
     # Pre-create one process per thread (eliminates all locking and false sharing).
-    # NOTE: the loops below MUST use `:static` scheduling. Indexing the pool by
-    # threadid() is only safe when iterations are statically pinned to threads;
-    # under the default `:dynamic` schedule threadid() is not stable across yield
-    # points, so a migrated task could alias another's process and corrupt results.
     thread_processes = [process_factory() for _ in 1:Threads.nthreads()]
-
-    if mode == MINIMAL
-        survival_count = Threads.Atomic{Int}(0)
-
-        @showprogress Threads.@threads :static for i in 1:num_simulations
-            # Get this thread's dedicated process (no locking needed)
-            thread_process = thread_processes[Threads.threadid()]
-            
-            # Calculate seed for this specific simulation
-            simulation_seed = start_seed + (i - 1)
-            
-            # Reset with specific seed
-            reset!(thread_process, initial_infected; rng_seed=simulation_seed)
-
-            # Enable stop_on_escape optimization for EscapeCriterion
-            stop_on_escape = criterion isa EscapeCriterion
-            sim_results = run_simulation(thread_process; max_time=max_time, max_steps=max_steps, stop_on_escape=stop_on_escape)
-            
-            # Thread-safe increment if survived
-            if evaluate_survival(thread_process, criterion, sim_results)
-                Threads.atomic_add!(survival_count, 1)
-            end
-        end
-        
-        survival_prob = survival_count[] / num_simulations
-        survival_se = sqrt(survival_prob * (1 - survival_prob) / num_simulations)
-        
-        return Dict{Symbol, Any}(
-            :survival_probability => survival_prob,
-            :survival_std_error => survival_se,
-            :num_survivals => survival_count[],
-            :num_extinctions => num_simulations - survival_count[]
-        )
-        
-    else  # DETAILED mode
-        # Pre-allocate results arrays
-        results = Vector{NamedTuple{(:survived, :time, :size), Tuple{Bool, Float64, Int}}}(undef, num_simulations)
-        
-        @showprogress Threads.@threads :static for i in 1:num_simulations
-            # Get this thread's dedicated process (see :static note above)
-            thread_process = thread_processes[Threads.threadid()]
-            
-            # Calculate seed for this specific simulation
-            simulation_seed = start_seed + (i - 1)
-            
-            # Reset with specific seed
-            reset!(thread_process, initial_infected; rng_seed=simulation_seed)
-            sim_results = run_simulation(thread_process; max_time=max_time, max_steps=max_steps)
-            
-            # Collect detailed data
-            survived = evaluate_survival(thread_process, criterion, sim_results)
-            survival_time = survived ? sim_results[:time] : NaN
-            final_size = get_cluster_size(thread_process)
-            
-            results[i] = (survived=survived, time=survival_time, size=final_size)
-        end
-        
-        # Process collected results
-        survival_count = count(r -> r.survived, results)
-        survival_times = [r.time for r in results if r.survived && !isnan(r.time)]
-        survival_prob = survival_count / num_simulations
-        
-        return Dict{Symbol, Any}(
-            :survival_probability => survival_prob,
-            :survival_std_error => sqrt(survival_prob * (1 - survival_prob) / num_simulations),
-            :num_survivals => survival_count,
-            :num_extinctions => num_simulations - survival_count,
-            :mean_survival_time => length(survival_times) > 0 ? mean(survival_times) : NaN,
-            :survival_times => survival_times,
-            :mean_final_size => mean([r.size for r in results]),
-            :final_sizes => [r.size for r in results]
-        )
+    @showprogress Threads.@threads :static for i in 1:length(results)
+        process = thread_processes[Threads.threadid()]
+        results[i] = _run_trial!(process, initial_infected, criterion,
+                                 start_seed + (i - 1), max_time, max_steps, stop_on_escape)
     end
+    return results
 end
 
-"""Serial implementation with seed control"""
-function _estimate_survival_serial(
-    process_factory::Function,
-    initial_infected::Vector{Int},
-    criterion::SurvivalCriterion,
-    num_simulations::Int,
-    max_time::Float64,
-    max_steps::Int,
-    mode::AnalysisMode,
-    start_seed::Int
-)::Dict{Symbol, Any}
-
-    # Create process once for serial execution with error handling
+"""Fill `results` by running the trials serially, reusing a single process."""
+function _fill_trials_serial!(results::Vector{TrialOutcome}, process_factory::Function,
+                              initial_infected::Vector{Int}, criterion::SurvivalCriterion,
+                              max_time::Float64, max_steps::Int, start_seed::Int,
+                              stop_on_escape::Bool)
     process = try
         process_factory()
     catch e
-        @error "Failed to create process for serial execution" exception=e
+        @error "Failed to create process for serial execution" exception = e
         rethrow()
     end
+    @showprogress for i in 1:length(results)
+        results[i] = _run_trial!(process, initial_infected, criterion,
+                                 start_seed + (i - 1), max_time, max_steps, stop_on_escape)
+    end
+    return results
+end
 
-    # Data collection based on mode
-    survival_count = 0
-    survival_times = mode == DETAILED ? Float64[] : nothing
-    final_sizes = mode == DETAILED ? Int[] : nothing
-    
-    # Pre-allocate for detailed mode
-    if mode == DETAILED
-        sizehint!(survival_times, num_simulations ÷ 2)  # Rough estimate
-        sizehint!(final_sizes, num_simulations)
-    end
-    
-    @showprogress for i in 1:num_simulations
-        # Calculate seed for this specific simulation
-        simulation_seed = start_seed + (i - 1)
-        
-        # Reset with specific seed
-        reset!(process, initial_infected; rng_seed=simulation_seed)
-        
-        # Enable stop_on_escape optimization for EscapeCriterion and run simulation
-        stop_on_escape = criterion isa EscapeCriterion
-        sim_results = run_simulation(process; max_time=max_time, max_steps=max_steps, stop_on_escape=stop_on_escape)
-        
-        # Evaluate survival
-        survived = evaluate_survival(process, criterion, sim_results)
-        
-        if survived
-            survival_count += 1
-            if mode == DETAILED
-                push!(survival_times, sim_results[:time])
-            end
-        end
-        
-        if mode == DETAILED
-            push!(final_sizes, get_cluster_size(process))
-        end
-    end
-    
-    # Compute core statistics
-    survival_prob = survival_count / num_simulations
-    survival_se = sqrt(survival_prob * (1 - survival_prob) / num_simulations)
-    
-    # Build results dict
-    result = Dict{Symbol, Any}(
+"""
+Summarize the per-trial outcomes into the result dictionary. MINIMAL mode reports
+the survival probability and counts; DETAILED additionally reports survival-time
+and final-size distributions.
+"""
+function _summarize_survival(results::Vector{TrialOutcome}, num_simulations::Int,
+                             mode::AnalysisMode)::Dict{Symbol, Any}
+    survival_count = count(r -> r.survived, results)
+    survival_prob  = survival_count / num_simulations
+
+    out = Dict{Symbol, Any}(
         :survival_probability => survival_prob,
-        :survival_std_error => survival_se,
-        :num_survivals => survival_count,
-        :num_extinctions => num_simulations - survival_count
+        :survival_std_error   => sqrt(survival_prob * (1 - survival_prob) / num_simulations),
+        :num_survivals        => survival_count,
+        :num_extinctions      => num_simulations - survival_count,
     )
-    
-    # Add detailed data if requested
+
     if mode == DETAILED
-        result[:mean_survival_time] = length(survival_times) > 0 ? mean(survival_times) : NaN
-        result[:survival_times] = survival_times
-        result[:mean_final_size] = mean(final_sizes)
-        result[:final_sizes] = final_sizes
+        survival_times = [r.time for r in results if r.survived && !isnan(r.time)]
+        out[:mean_survival_time] = isempty(survival_times) ? NaN : mean(survival_times)
+        out[:survival_times]     = survival_times
+        out[:mean_final_size]    = mean(r.size for r in results)
+        out[:final_sizes]        = [r.size for r in results]
     end
-    
-    return result
+
+    return out
 end
 
 # =============================================================================

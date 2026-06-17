@@ -61,16 +61,6 @@ end
 # layout when present, or a force-directed fallback otherwise.
 can_visualize(viz::NetworkVisualizer, graph::AbstractEpidemicGraph)::Bool = true
 
-function get_visualization_settings(viz::NetworkVisualizer)::Dict{Symbol, Any}
-    return Dict{Symbol, Any}(
-        :color_scheme => viz.color_scheme,
-        :figure_size => viz.figure_size,
-        :node_size => viz.node_size,
-        :show_edges => viz.show_edges,
-        :dim => viz.dim
-    )
-end
-
 # Visualizer dispatch lives in visualization.jl: the generic
 # `visualizer_for(::AbstractEpidemicGraph)` fallback routes every non-lattice graph
 # (general `AdjacencyGraph`, `ErdosRenyiGraph`, and the structured implicit graphs)

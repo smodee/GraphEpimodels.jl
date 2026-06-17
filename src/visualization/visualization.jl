@@ -89,30 +89,6 @@ function can_visualize(visualizer::AbstractVisualizer, graph::AbstractEpidemicGr
     return graph_type in supported_graph_types(visualizer)
 end
 
-"""
-Get visualization settings/parameters for this visualizer.
-
-Default implementation returns empty dictionary. Override for configurable visualizers.
-
-# Returns
-- `Dict{Symbol, Any}`: Current visualization settings
-"""
-function get_visualization_settings(visualizer::AbstractVisualizer)::Dict{Symbol, Any}
-    return Dict{Symbol, Any}()
-end
-
-"""
-Update visualization settings/parameters.
-
-Default implementation does nothing. Override for configurable visualizers.
-
-# Arguments
-- `settings::Dict{Symbol, Any}`: New settings to apply
-"""
-function set_visualization_settings!(visualizer::AbstractVisualizer, settings::Dict{Symbol, Any})
-    # Default: do nothing
-end
-
 # =============================================================================
 # Shared Color Schemes and Styling
 # =============================================================================

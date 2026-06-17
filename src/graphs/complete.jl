@@ -49,30 +49,9 @@ end
 # Core Interface Implementation (Required Methods)
 # =============================================================================
 
-@inline function num_nodes(graph::CompleteGraph)::Int
-    return graph.n_nodes
-end
-
-function node_states_raw(graph::CompleteGraph)::Vector{Int8}
-    return graph.states
-end
-
-function set_node_states_raw!(graph::CompleteGraph, states::Vector{Int8})
-    if length(states) != num_nodes(graph)
-        throw(ArgumentError("Expected $(num_nodes(graph)) states, got $(length(states))"))
-    end
-    graph.states = states
-end
-
-function get_neighbors(graph::CompleteGraph, node_id::Int)::Vector{Int}
-    return get_neighbors!(Int[], graph, node_id)
-end
-
 function get_neighbors!(neighbors::Vector{Int}, graph::CompleteGraph, node_id::Int)::Vector{Int}
+    _check_node(graph, node_id)
     n = graph.n_nodes
-    if node_id < 1 || node_id > n
-        throw(BoundsError("Node ID $node_id out of range [1, $n]"))
-    end
     empty!(neighbors)
     sizehint!(neighbors, n - 1)
     @inbounds for j in 1:n
@@ -85,9 +64,7 @@ end
 
 # Degree is constant: every node connects to all n-1 others.
 @inline function get_node_degree(graph::CompleteGraph, node_id::Int)::Int
-    if node_id < 1 || node_id > graph.n_nodes
-        throw(BoundsError("Node ID $node_id out of range [1, $(graph.n_nodes)]"))
-    end
+    _check_node(graph, node_id)
     return graph.n_nodes - 1
 end
 
@@ -105,9 +82,7 @@ array — no adjacency list is materialized.
 """
 function count_neighbors_by_state(graph::CompleteGraph, node_id::Int,
                                   target_state::NodeState)::Int
-    if node_id < 1 || node_id > graph.n_nodes
-        throw(BoundsError("Node ID $node_id out of range [1, $(graph.n_nodes)]"))
-    end
+    _check_node(graph, node_id)
     target_int = state_to_int(target_state)
     total = count(==(target_int), graph.states)
     # Exclude the node itself (a node is not its own neighbor).
@@ -128,14 +103,8 @@ supported_layout_dims(::CompleteGraph)::Tuple{Vararg{Int}} = (2, 3)
 function node_positions(graph::CompleteGraph; dim::Int = 2)::Matrix{Float64}
     _check_layout_dim(graph, dim)
     n = graph.n_nodes
-    dim == 3 && return _fibonacci_sphere(n)   # all nodes on the unit sphere
-    pos = Matrix{Float64}(undef, 2, n)
-    @inbounds for idx in 1:n
-        θ = 2π * (idx - 1) / n
-        pos[1, idx] = cos(θ)
-        pos[2, idx] = sin(θ)
-    end
-    return pos
+    # Evenly on the unit circle (2D) or unit sphere (3D).
+    return dim == 3 ? _fibonacci_sphere(n) : _circle_layout(n)
 end
 
 # =============================================================================

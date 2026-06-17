@@ -109,10 +109,13 @@ export RegularTree, create_regular_tree, create_dary_tree
 # Epidemic Process Framework
 # =============================================================================
 
+# Active-node tracker: the data structure every SIR-like process is built on.
+include("core/active_tracker.jl")
+
 # Abstract process interface
 include("models/epiprocess.jl")
 export AbstractEpidemicProcess
-export SIRLikeProcess, ContactLikeProcess, VoterLikeProcess
+export SIRLikeProcess
 
 # Core process interface functions
 export get_graph, step!, reset!
@@ -154,7 +157,7 @@ export create_chase_escape_process
 
 # Basic utility functions
 include("core/utils.jl")
-export validate_node_list, create_rng, set_global_seed!
+export create_rng, set_global_seed!
 export @time_it
 
 # Process serialization and CSV utilities
