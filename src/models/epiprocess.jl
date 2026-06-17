@@ -158,21 +158,23 @@ Check if infection has reached graph boundary.
 """
 function has_escaped(process::AbstractEpidemicProcess)::Bool
     graph = get_graph(process)
-    boundary_nodes = get_boundary_nodes(graph)
-    
+    # Read-only, non-copying view: has_escaped runs every step under
+    # stop_on_escape, so copying the boundary list here was pure per-step GC churn.
+    boundary_nodes = _boundary_nodes_view(graph)
+
     if isempty(boundary_nodes)
         return false  # No boundary concept for this graph type
     end
-    
+
     states = node_states_raw(graph)
     infected_state = state_to_int(INFECTED)
-    
-    for node in boundary_nodes
+
+    @inbounds for node in boundary_nodes
         if states[node] == infected_state
             return true
         end
     end
-    
+
     return false
 end
 
