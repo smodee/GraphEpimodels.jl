@@ -137,6 +137,43 @@ end
 end
 
 # =============================================================================
+# Performance-Optimized Neighbor Counting (simulation hot path)
+# =============================================================================
+
+"""
+Count a node's neighbours in `target_state` without materializing a neighbour
+list. Mirrors [`get_neighbors!`](@ref): test the parent (if any) and the
+contiguous block of children directly against the `Int8` state array. This is the
+inner loop of the SIR/ZIM steppers.
+"""
+function count_neighbors_by_state(tree::RegularTree, node_id::Int,
+                                  target_state::NodeState)::Int
+    _check_node(tree, node_id)
+    n = tree.n_nodes
+    states = tree.states
+    target_int = state_to_int(target_state)
+    cnt = 0
+
+    @inbounds begin
+        # Parent: every node except the root has one.
+        if node_id > 1 && states[_parent(tree, node_id)] == target_int
+            cnt += 1
+        end
+
+        # Children: a contiguous block in BFS order.
+        first_child = _first_child(tree, node_id)
+        if first_child <= n
+            last_child = min(first_child + _num_children(tree, node_id) - 1, n)
+            for c in first_child:last_child
+                cnt += states[c] == target_int
+            end
+        end
+    end
+
+    return cnt
+end
+
+# =============================================================================
 # Geometry Interface (for visualization)
 # =============================================================================
 #

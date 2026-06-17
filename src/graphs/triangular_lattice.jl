@@ -122,6 +122,52 @@ end
 end
 
 # =============================================================================
+# Performance-Optimized Neighbor Counting (simulation hot path)
+# =============================================================================
+
+"""
+Count a node's neighbours in `target_state` without materializing a neighbour
+list. Mirrors [`get_neighbors!`](@ref): walk the up-to-6 axis/diagonal neighbours,
+testing the contiguous `Int8` state array directly. This is the inner loop of the
+SIR/ZIM steppers.
+"""
+function count_neighbors_by_state(lattice::TriangularLattice, node_id::Int,
+                                  target_state::NodeState)::Int
+    _check_node(lattice, node_id)
+    row, col = _tri_index_to_coord(node_id, lattice.width)
+    target_int = state_to_int(target_state)
+    cnt = 0
+
+    # Two horizontal neighbors (same row).
+    cnt += _count_perimeter_neighbor(row, col - 1, lattice, target_int)
+    cnt += _count_perimeter_neighbor(row, col + 1, lattice, target_int)
+
+    # Four diagonal neighbors; column offsets depend on row parity.
+    if iseven(row)
+        cnt += _count_perimeter_neighbor(row - 1, col,     lattice, target_int)
+        cnt += _count_perimeter_neighbor(row - 1, col + 1, lattice, target_int)
+        cnt += _count_perimeter_neighbor(row + 1, col,     lattice, target_int)
+        cnt += _count_perimeter_neighbor(row + 1, col + 1, lattice, target_int)
+    else
+        cnt += _count_perimeter_neighbor(row - 1, col - 1, lattice, target_int)
+        cnt += _count_perimeter_neighbor(row - 1, col,     lattice, target_int)
+        cnt += _count_perimeter_neighbor(row + 1, col - 1, lattice, target_int)
+        cnt += _count_perimeter_neighbor(row + 1, col,     lattice, target_int)
+    end
+
+    return cnt
+end
+
+"""Return 1 if neighbor (row, col) is in bounds and in `target_int`, else 0."""
+@inline function _count_perimeter_neighbor(row::Int, col::Int,
+                                           lattice::TriangularLattice, target_int::Int8)::Int
+    if 1 <= row <= lattice.height && 1 <= col <= lattice.width
+        @inbounds return lattice.states[_tri_coord_to_index(row, col, lattice.width)] == target_int
+    end
+    return 0
+end
+
+# =============================================================================
 # Geometry Interface (for visualization)
 # =============================================================================
 #
