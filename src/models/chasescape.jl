@@ -70,14 +70,20 @@ mutable struct ChaseEscapeProcess{G<:AbstractEpidemicGraph, R<:AbstractRNG} <: S
     time::Float64
     steps::Int
     rng::R
+    # Reusable scratch buffers so per-step event handling allocates nothing on the
+    # hot path (mirrors ZIM; see issues #1/#3). One thread per process, so no locking.
+    neighbor_buf::Vector{Int}
+    susceptible_buf::Vector{Int}
 
     function ChaseEscapeProcess(graph::G, λ::Float64, μ::Float64;
                                 ghost::Bool = true,
                                 rng::R = Random.default_rng()) where {G<:AbstractEpidemicGraph, R<:AbstractRNG}
         _validate_rates("Red spread rate λ" => λ, "Blue catch rate μ" => μ)
+        neighbor_buf = Int[]; susceptible_buf = Int[]
+        sizehint!(neighbor_buf, 8); sizehint!(susceptible_buf, 8)
         new{G,R}(graph, λ, μ, ghost,
             DictActiveTracker(), DictActiveTracker(),
-            0.0, 0, rng)
+            0.0, 0, rng, neighbor_buf, susceptible_buf)
     end
 end
 
@@ -153,11 +159,11 @@ end
 # =============================================================================
 
 function _ce_spread!(process::ChaseEscapeProcess, acting_node::Int)
-    neighbors = get_neighbors(process.graph, acting_node)
+    neighbors = get_neighbors!(process.neighbor_buf, process.graph, acting_node)
     states    = node_states_raw(process.graph)
     # White nodes are SUSCEPTIBLE in the S/I/R encoding, so a "white neighbour" is a
     # susceptible neighbour — the shared picker applies directly.
-    target = _random_susceptible_neighbor(neighbors, states, Int[], process.rng)
+    target = _random_susceptible_neighbor(neighbors, states, process.susceptible_buf, process.rng)
 
     if target == 0
         @warn "Red node $acting_node has no white neighbours but is in spread tracker"
@@ -187,7 +193,8 @@ function _update_tracking_after_ce_spread!(process::ChaseEscapeProcess, new_red:
     blue_count = count_neighbors_by_state(process.graph, new_red, REMOVED)
     add_active_node!(process.catch_tracker, new_red, blue_count)
 
-    for neighbor in get_neighbors(process.graph, new_red)
+    # Reused buffer; new_red's own neighbor list is no longer needed by the caller.
+    for neighbor in get_neighbors!(process.neighbor_buf, process.graph, new_red)
         if states[neighbor] == infected_state
             spread_w = get(process.spread_tracker.active_nodes, neighbor, 0)
             update_active_node!(process.spread_tracker, neighbor, spread_w - 1)
@@ -206,7 +213,7 @@ function _ce_catch!(process::ChaseEscapeProcess, caught_node::Int)
     # `caught_node` went red→blue, so every red neighbour gained one blue
     # neighbour: increment its catch weight. Spread weights are unchanged
     # (`caught_node` was red, not white).
-    for neighbor in get_neighbors(process.graph, caught_node)
+    for neighbor in get_neighbors!(process.neighbor_buf, process.graph, caught_node)
         if states[neighbor] == infected_state
             catch_w = get(process.catch_tracker.active_nodes, neighbor, 0)
             update_active_node!(process.catch_tracker, neighbor, catch_w + 1)
