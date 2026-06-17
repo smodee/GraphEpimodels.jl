@@ -200,6 +200,19 @@ function get_boundary_nodes(graph::AbstractEpidemicGraph)::Vector{Int}
 end
 
 """
+Read-only, non-copying view of the boundary nodes for hot-path callers.
+
+`get_boundary_nodes` copies defensively so callers may mutate the result, but
+[`has_escaped`](@ref) only *reads* the list and runs on every Gillespie step
+under `stop_on_escape` — the defensive copy was pure per-step allocation (a
+boundary-sized `Vector{Int}` churned each step, the dominant GC cost of escape
+analysis). This internal accessor returns the underlying vector directly and
+must never be mutated. The default delegates to `get_boundary_nodes` so any type
+is handled correctly; lattices override it to hand back their stored perimeter.
+"""
+_boundary_nodes_view(graph::AbstractEpidemicGraph)::Vector{Int} = get_boundary_nodes(graph)
+
+"""
 Check if the graph has a boundary concept.
 
 # Returns
@@ -251,6 +264,9 @@ end
 
 # Lattices additionally precompute their perimeter (empty for periodic boundaries).
 get_boundary_nodes(lattice::AbstractLatticeGraph)::Vector{Int} = copy(lattice.boundary_nodes)
+
+# Hand back the stored perimeter without copying (read-only; see _boundary_nodes_view).
+_boundary_nodes_view(lattice::AbstractLatticeGraph)::Vector{Int} = lattice.boundary_nodes
 
 # =============================================================================
 # Geometry Interface (Optional - consumed by the visualization layer)

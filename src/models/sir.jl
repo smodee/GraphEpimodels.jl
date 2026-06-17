@@ -48,11 +48,20 @@ mutable struct SIRProcess{G<:AbstractEpidemicGraph, R<:AbstractRNG} <: SIRLikePr
     time::Float64
     steps::Int
     rng::R
+    # Reusable scratch buffers so per-step event handling allocates nothing on the
+    # hot path (mirrors ZIM; see issues #1/#3). neighbor_buf backs get_neighbors!
+    # calls; susceptible_buf collects susceptible neighbors when choosing a target.
+    # A process is used by one thread at a time, so reuse needs no locking.
+    neighbor_buf::Vector{Int}
+    susceptible_buf::Vector{Int}
 
     function SIRProcess(graph::G, β::Float64, γ::Float64;
                         rng::R = Random.default_rng()) where {G<:AbstractEpidemicGraph, R<:AbstractRNG}
         _validate_rates("Transmission rate β" => β, "Recovery rate γ" => γ)
-        new{G,R}(graph, β, γ, DictActiveTracker(), Set{Int}(), 0.0, 0, rng)
+        neighbor_buf = Int[]; susceptible_buf = Int[]
+        sizehint!(neighbor_buf, 8); sizehint!(susceptible_buf, 8)
+        new{G,R}(graph, β, γ, DictActiveTracker(), Set{Int}(), 0.0, 0, rng,
+            neighbor_buf, susceptible_buf)
     end
 end
 
@@ -112,9 +121,11 @@ end
 # =============================================================================
 
 function _sir_infect!(process::SIRProcess, acting_node::Int)
-    neighbors = get_neighbors(process.graph, acting_node)
+    # Reused scratch buffers (no allocation). neighbor_buf may alias an internal
+    # list for non-lattice graphs, so it is read only until we re-fetch below.
+    neighbors = get_neighbors!(process.neighbor_buf, process.graph, acting_node)
     states    = node_states_raw(process.graph)
-    target = _random_susceptible_neighbor(neighbors, states, Int[], process.rng)
+    target = _random_susceptible_neighbor(neighbors, states, process.susceptible_buf, process.rng)
 
     if target == 0
         @warn "Infected node $acting_node has no susceptible neighbors but is marked active"
@@ -124,9 +135,11 @@ function _sir_infect!(process::SIRProcess, acting_node::Int)
 
     states[target] = state_to_int(INFECTED)
     push!(process.infected_nodes, target)
-    # Same S→I tracker maintenance as ZIM (shared helper).
+    # Same S→I tracker maintenance as ZIM (shared helper). Re-fetch into
+    # neighbor_buf (acting_node's neighbors are no longer needed).
     _track_si_infection!(process.active_tracker, process.graph,
-                         get_neighbors(process.graph, target), acting_node, target)
+                         get_neighbors!(process.neighbor_buf, process.graph, target),
+                         acting_node, target)
 end
 
 function _sir_recover!(process::SIRProcess, recovering_node::Int)

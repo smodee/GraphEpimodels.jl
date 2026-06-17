@@ -63,15 +63,21 @@ mutable struct MakiThompsonProcess{G<:AbstractEpidemicGraph, R<:AbstractRNG} <: 
     time::Float64
     steps::Int
     rng::R
+    # Reusable scratch buffers so per-step event handling allocates nothing on the
+    # hot path (mirrors ZIM; see issues #1/#3). One thread per process, so no locking.
+    neighbor_buf::Vector{Int}
+    susceptible_buf::Vector{Int}
 
     function MakiThompsonProcess(graph::G,
                                   α::Float64, β::Float64,
                                   stifler_contact::Bool;
                                   rng::R = Random.default_rng()) where {G<:AbstractEpidemicGraph, R<:AbstractRNG}
         _validate_rates("Spreading rate α" => α, "Stifling rate β" => β)
+        neighbor_buf = Int[]; susceptible_buf = Int[]
+        sizehint!(neighbor_buf, 8); sizehint!(susceptible_buf, 8)
         new{G,R}(graph, α, β, stifler_contact,
             DictActiveTracker(), DictActiveTracker(),
-            Set{Int}(), 0.0, 0, rng)
+            Set{Int}(), 0.0, 0, rng, neighbor_buf, susceptible_buf)
     end
 end
 
@@ -136,9 +142,9 @@ end
 # =============================================================================
 
 function _mt_spread!(process::MakiThompsonProcess, acting_node::Int)
-    neighbors = get_neighbors(process.graph, acting_node)
+    neighbors = get_neighbors!(process.neighbor_buf, process.graph, acting_node)
     states    = node_states_raw(process.graph)
-    target = _random_susceptible_neighbor(neighbors, states, Int[], process.rng)
+    target = _random_susceptible_neighbor(neighbors, states, process.susceptible_buf, process.rng)
 
     if target == 0
         @warn "Spreader $acting_node has no susceptible neighbours but is in spreading tracker"
@@ -175,8 +181,9 @@ function _update_tracking_after_mt_spread!(process::MakiThompsonProcess,
     stifle_count = process.stifler_contact ? (i_count + r_count) : i_count
     add_active_node!(process.stifling_tracker, new_infected, stifle_count)
 
-    # Update all I-neighbours of new_infected
-    for neighbor in get_neighbors(process.graph, new_infected)
+    # Update all I-neighbours of new_infected (reused buffer; new_infected's own
+    # neighbor list is no longer needed by the caller at this point).
+    for neighbor in get_neighbors!(process.neighbor_buf, process.graph, new_infected)
         if states[neighbor] == infected_state
             # Spreading: each I-neighbour lost new_infected as a S-neighbour
             spread_w = get(process.spreading_tracker.active_nodes, neighbor, 0)
@@ -206,7 +213,7 @@ function _mt_stifle!(process::MakiThompsonProcess, stifling_node::Int)
     #   Each I-neighbour loses one catalyst → decrement stifling tracker.
     if !process.stifler_contact
         infected_state = state_to_int(INFECTED)
-        for neighbor in get_neighbors(process.graph, stifling_node)
+        for neighbor in get_neighbors!(process.neighbor_buf, process.graph, stifling_node)
             if states[neighbor] == infected_state
                 w = get(process.stifling_tracker.active_nodes, neighbor, 0)
                 if w > 0

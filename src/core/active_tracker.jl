@@ -35,6 +35,13 @@ This is the pattern from your efficient old implementation.
 mutable struct DictActiveTracker <: ActiveNodeTracker
     active_nodes::Dict{Int, Int}  # node_id → susceptible_neighbor_count
 
+    # Running sum of all weights in `active_nodes`, maintained incrementally by the
+    # add/remove/update/clear mutators below so that `get_total_boundary` is O(1)
+    # instead of an O(active) `sum(values(...))`. It runs on every Gillespie step
+    # (often more than once per step for the two-event-class models), so the linear
+    # sum was pure per-step overhead. Invariant: total_weight == sum(values(active_nodes)).
+    total_weight::Int
+
     # Scratch buffers reused by _weighted_sample_active_fast so that weighted
     # sampling allocates nothing on the hot path. A tracker is owned by a single
     # process (and thus a single thread during threaded runs), so reusing these
@@ -42,7 +49,7 @@ mutable struct DictActiveTracker <: ActiveNodeTracker
     nodes_buf::Vector{Int}        # idx → node_id
     cumw_buf::Vector{Int}         # idx → cumulative weight up to and including idx
 
-    DictActiveTracker() = new(Dict{Int, Int}(), Int[], Int[])
+    DictActiveTracker() = new(Dict{Int, Int}(), 0, Int[], Int[])
 end
 
 """
@@ -55,7 +62,11 @@ Add a node to active tracking.
 """
 function add_active_node!(tracker::DictActiveTracker, node_id::Int, neighbor_count::Int)
     if neighbor_count > 0
+        # Adjust the running total by the delta vs. any existing weight, so a
+        # repeated add (overwrite) stays consistent with the dict.
+        old = get(tracker.active_nodes, node_id, 0)
         tracker.active_nodes[node_id] = neighbor_count
+        tracker.total_weight += neighbor_count - old
     end
 end
 
@@ -63,7 +74,9 @@ end
 Remove a node from active tracking.
 """
 function remove_active_node!(tracker::DictActiveTracker, node_id::Int)
-    delete!(tracker.active_nodes, node_id)
+    # pop! returns the removed weight (0 if absent), so the total stays in sync
+    # whether or not the node was present.
+    tracker.total_weight -= pop!(tracker.active_nodes, node_id, 0)
 end
 
 """
@@ -71,9 +84,11 @@ Update neighbor count for an active node.
 """
 function update_active_node!(tracker::DictActiveTracker, node_id::Int, new_count::Int)
     if new_count > 0
+        old = get(tracker.active_nodes, node_id, 0)
         tracker.active_nodes[node_id] = new_count
+        tracker.total_weight += new_count - old
     else
-        delete!(tracker.active_nodes, node_id)
+        tracker.total_weight -= pop!(tracker.active_nodes, node_id, 0)
     end
 end
 
@@ -85,10 +100,11 @@ function get_active_nodes(tracker::DictActiveTracker)::Vector{Int}
 end
 
 """
-Get total boundary (sum of all neighbor counts).
+Get total boundary (sum of all neighbor counts). O(1): returns the incrementally
+maintained running sum (see `total_weight`).
 """
 function get_total_boundary(tracker::DictActiveTracker)::Int
-    return sum(values(tracker.active_nodes))
+    return tracker.total_weight
 end
 
 """
@@ -103,6 +119,7 @@ Clear all active nodes.
 """
 function clear_active_nodes!(tracker::DictActiveTracker)
     empty!(tracker.active_nodes)
+    tracker.total_weight = 0
 end
 
 # =============================================================================
