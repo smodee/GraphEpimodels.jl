@@ -23,7 +23,6 @@ Uses primitive Int8 states for maximum performance and minimal memory usage.
 - `adjacency_list::Vector{Vector{Int}}`: Neighbor lists for each node
 - `n_nodes::Int`: Total number of nodes (pre-computed)
 - `states::Vector{Int8}`: Node states (primitive array)
-- `node_degrees::Vector{Int}`: Pre-computed node degrees (optional optimization)
 - `coords::Union{Matrix{Float64}, Nothing}`: Optional `dim × n` node coordinates
   for plotting (column `i` = position of node `i`). `nothing` means no layout,
   and the visualizer computes one (e.g. force-directed).
@@ -32,7 +31,6 @@ mutable struct AdjacencyGraph <: AbstractEpidemicGraph
     adjacency_list::Vector{Vector{Int}}
     n_nodes::Int
     states::Vector{Int8}
-    node_degrees::Vector{Int}  # Pre-computed for performance
     coords::Union{Matrix{Float64}, Nothing}
 
     function AdjacencyGraph(adjacency_list::Vector{Vector{Int}};
@@ -46,15 +44,12 @@ mutable struct AdjacencyGraph <: AbstractEpidemicGraph
         # Validate adjacency list structure
         _validate_adjacency_list(adjacency_list)
 
-        # Pre-compute node degrees for performance
-        node_degrees = [length(neighbors) for neighbors in adjacency_list]
-
         # Initialize all nodes as susceptible
         states = zeros(Int8, n)
 
         coords_mat = _validate_coords(coords, n)
 
-        new(adjacency_list, n, states, node_degrees, coords_mat)
+        new(adjacency_list, n, states, coords_mat)
     end
 end
 
@@ -97,7 +92,7 @@ end
     if node_id < 1 || node_id > graph.n_nodes
         throw(BoundsError("Node ID $node_id out of range [1, $(graph.n_nodes)]"))
     end
-    return graph.node_degrees[node_id]
+    return length(graph.adjacency_list[node_id])
 end
 
 function node_states_raw(graph::AdjacencyGraph)::Vector{Int8}
@@ -147,26 +142,24 @@ end
 # =============================================================================
 
 """
-Optimized neighbor counting for general graphs.
-Uses pre-computed degrees and direct array access for maximum performance.
+Optimized neighbor counting for general graphs. Fetches the stored neighbor list
+once and iterates it directly (the empty-list early-out reuses that same load).
 """
-function count_neighbors_by_state(graph::AdjacencyGraph, node_id::Int, 
+function count_neighbors_by_state(graph::AdjacencyGraph, node_id::Int,
                                  target_state::NodeState)::Int
-    if graph.node_degrees[node_id] == 0
-        return 0  # No neighbors
-    end
-    
     neighbors = graph.adjacency_list[node_id]
+    isempty(neighbors) && return 0  # No neighbors
+
     states = graph.states
     target_int = state_to_int(target_state)
-    
+
     count = 0
     @inbounds for neighbor in neighbors
         if states[neighbor] == target_int
             count += 1
         end
     end
-    
+
     return count
 end
 
