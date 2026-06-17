@@ -249,7 +249,7 @@ function create_erdos_renyi(n::Int;
             throw(ArgumentError("Edge probability p must be in [0, 1] (got $p)"))
         Float64(p) >= 1.0 && _warn_complete_fallback(n)
         graph = AdjacencyGraph(_erdos_renyi_gnp(n, Float64(p), rng))
-        realized_m = sum(graph.node_degrees) ÷ 2
+        realized_m = sum(length, graph.adjacency_list) ÷ 2
         return ErdosRenyiGraph(graph, :gnp, Float64(p), realized_m)
     else
         m >= 0 || throw(ArgumentError("Edge count m must be non-negative (got $m)"))
