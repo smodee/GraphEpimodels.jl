@@ -18,12 +18,54 @@ neither and stay in the package.
 # Process Information Extraction
 # =============================================================================
 
+# Serialization descriptors. Rather than poke at process/graph fields with
+# `hasfield`/`isa` (which silently misses any model whose rate fields aren't named
+# λ/μ — e.g. SIR's β/γ, Maki-Thompson's α/β), each type advertises the parameters
+# it wants serialized via these two small dispatch points. The dict keys become
+# part of the reproducibility config string, so they must stay stable.
+
+"""
+Model-specific parameters to serialize for `process`, as a `String => value` dict.
+Default: none; each concrete process overrides this to advertise its rate
+parameters.
+"""
+model_parameters(::AbstractEpidemicProcess)::Dict{String, Any} = Dict{String, Any}()
+model_parameters(p::ZIMProcess)::Dict{String, Any} =
+    Dict{String, Any}("lambda" => p.λ, "mu" => p.μ)
+model_parameters(p::SIRProcess)::Dict{String, Any} =
+    Dict{String, Any}("beta" => p.β, "gamma" => p.γ)
+model_parameters(p::MakiThompsonProcess)::Dict{String, Any} =
+    Dict{String, Any}("alpha" => p.α, "beta" => p.β, "stifler_contact" => p.stifler_contact)
+model_parameters(p::ChaseEscapeProcess)::Dict{String, Any} =
+    Dict{String, Any}("lambda" => p.λ, "mu" => p.μ, "ghost" => p.ghost)
+
+"""
+Graph-shape parameters to serialize for `graph`, as a `String => value` dict.
+Default: none; lattices override to record their dimensions and boundary.
+"""
+graph_descriptor(::AbstractEpidemicGraph)::Dict{String, Any} = Dict{String, Any}()
+# 2D hypercubic (SquareLattice): width/height/boundary, keeping the config string
+# identical to the pre-refactor field-poking version.
+graph_descriptor(lattice::HypercubicLattice{2})::Dict{String, Any} =
+    Dict{String, Any}("width" => lattice.dims[1], "height" => lattice.dims[2],
+                      "boundary" => string(lattice.boundary))
+function graph_descriptor(lattice::HypercubicLattice)::Dict{String, Any}
+    d = Dict{String, Any}("boundary" => string(lattice.boundary))
+    for (i, s) in enumerate(lattice.dims)
+        d["dim$i"] = s
+    end
+    return d
+end
+graph_descriptor(lattice::Union{TriangularLattice, HexagonalLattice})::Dict{String, Any} =
+    Dict{String, Any}("width" => lattice.width, "height" => lattice.height,
+                      "boundary" => string(lattice.boundary))
+
 """
 Extract comprehensive process and graph information for serialization.
 
-Introspects an epidemic process to capture all relevant parameters for
-reproducibility and identification. Returns a dictionary suitable for
-JSON serialization.
+Captures the process type, the model's rate parameters ([`model_parameters`](@ref)),
+the graph type and shape ([`graph_descriptor`](@ref)), and basic graph properties,
+as a dictionary suitable for JSON serialization and reproducibility config strings.
 
 # Arguments
 - `process::AbstractEpidemicProcess`: The process to extract information from
@@ -39,50 +81,15 @@ info = extract_process_info(zim)
 ```
 """
 function extract_process_info(process::AbstractEpidemicProcess)::Dict{String, Any}
-    info = Dict{String, Any}()
+    info = Dict{String, Any}("process_type" => string(nameof(typeof(process))))
+    merge!(info, model_parameters(process))
 
-    # Basic process information
-    info["process_type"] = string(nameof(typeof(process)))
-
-    # Extract process-specific parameters
-    # Check for common epidemic process parameters
-    if hasfield(typeof(process), :λ)
-        info["lambda"] = process.λ
-    end
-
-    if hasfield(typeof(process), :μ)
-        info["mu"] = process.μ
-    end
-
-    # Extract graph information
     graph = get_graph(process)
     info["graph_type"] = string(nameof(typeof(graph)))
+    merge!(info, graph_descriptor(graph))
 
-    # Graph-specific parameters. The hypercubic lattice stores its shape in a
-    # `dims` tuple rather than width/height fields; the 2D alias maps to
-    # (width, height). Other lattices (triangular/hexagonal) keep real fields.
-    if graph isa SquareLattice
-        info["width"]  = graph.dims[1]
-        info["height"] = graph.dims[2]
-    else
-        if hasfield(typeof(graph), :width)
-            info["width"] = graph.width
-        end
-        if hasfield(typeof(graph), :height)
-            info["height"] = graph.height
-        end
-    end
-
-    if hasfield(typeof(graph), :boundary)
-        info["boundary"] = string(graph.boundary)
-    end
-
-    # General graph properties
-    info["num_nodes"] = num_nodes(graph)
-
-    # Additional useful metadata
+    info["num_nodes"]    = num_nodes(graph)
     info["has_boundary"] = has_boundary(graph)
-
     return info
 end
 

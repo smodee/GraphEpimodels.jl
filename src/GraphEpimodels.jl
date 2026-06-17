@@ -109,6 +109,9 @@ export RegularTree, create_regular_tree, create_dary_tree
 # Epidemic Process Framework
 # =============================================================================
 
+# Active-node tracker: the data structure every SIR-like process is built on.
+include("core/active_tracker.jl")
+
 # Abstract process interface
 include("models/epiprocess.jl")
 export AbstractEpidemicProcess

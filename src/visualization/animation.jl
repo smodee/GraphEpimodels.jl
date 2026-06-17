@@ -172,12 +172,6 @@ function _count_states_raw(states::Vector{Int8})::NTuple{3, Int}
     return (nS, nI, nR)
 end
 
-"""Short process name for frame titles, e.g. `SIRProcess` -> "SIR"."""
-function _process_name(process::AbstractEpidemicProcess)::String
-    name = string(nameof(typeof(process)))
-    return endswith(name, "Process") ? name[1:end-7] : name
-end
-
 """Build the per-frame title string from recorded metadata."""
 function _frame_title(rec::SimulationRecording, idx::Int)::String
     t = rec.times[idx]
