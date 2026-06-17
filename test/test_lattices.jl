@@ -343,3 +343,35 @@ end
     GraphEpimodels.clear_active_nodes!(t)
     @test isempty(t.sorted_nodes) && isempty(t.active_nodes)
 end
+
+# SIR recovery now samples from a dense Vector with O(1) swap-removal, backed by a
+# node→index map. A stale index would not necessarily crash (indices can stay
+# in-range), so check the bookkeeping invariant directly across a full run: the
+# infected vector has no duplicates, its index map points each node to its own
+# slot, and together they exactly equal the graph's INFECTED nodes.
+@testset "SIR infected-set swap-remove bookkeeping invariant" begin
+    g = create_square_lattice(25, 25, :absorbing)
+    p = SIRProcess(g, 3.0, 1.0)
+    reset!(p, [num_nodes(g) ÷ 2]; rng_seed = 7)
+
+    function _infected_consistent(p)
+        nodes = p.infected_nodes
+        idx = p.infected_index
+        length(nodes) == length(idx) || return false
+        for (i, nd) in enumerate(nodes)
+            get(idx, nd, 0) == i || return false
+        end
+        # The dense set must match the graph's actual INFECTED nodes exactly.
+        Set(nodes) == Set(get_nodes_in_state(g, INFECTED))
+    end
+
+    @test _infected_consistent(p)
+    steps = 0
+    ok = true
+    while is_active(p) && steps < 200_000
+        step!(p); steps += 1
+        ok &= _infected_consistent(p)
+    end
+    @test ok
+    @test isempty(p.infected_nodes) && isempty(p.infected_index)  # ran to extinction
+end
