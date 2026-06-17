@@ -15,6 +15,145 @@ module GraphEpimodelsPersistenceExt
 using GraphEpimodels
 using CSV, DataFrames
 
+# =============================================================================
+# Batched in-memory survival-result store (read once / write once)
+# =============================================================================
+#
+# `run_parameter_sweep` previously called the single-row `get_next_start_seed` and
+# `update_or_append_survival_result` once per parameter; each re-read (and the
+# latter re-wrote) the entire CSV and re-parsed every row's JSON config. The store
+# below collapses that to one read up front and one write at the end: rows live in
+# a DataFrame, and each existing row's reproducibility config string is parsed once
+# on load and cached, so per-parameter seed lookups and result records are pure
+# in-memory operations.
+
+"""
+In-memory survival-result store: the result `DataFrame` plus, parallel to its
+rows, the cached config string of each row (so matching is one string compare, not
+a JSON re-parse).
+"""
+mutable struct SurvivalStore
+    df::DataFrame
+    config_strings::Vector{String}
+end
+
+const _SURVIVAL_COLUMNS = (:parameter, :num_simulations, :num_survivals,
+                           :survival_probability, :std_error, :start_seed,
+                           :end_seed, :process_config)
+
+"""Empty result DataFrame with the canonical column names and types."""
+_empty_survival_df()::DataFrame = DataFrame(
+    parameter            = Float64[],
+    num_simulations      = Int[],
+    num_survivals        = Int[],
+    survival_probability = Float64[],
+    std_error            = Float64[],
+    start_seed           = Int[],
+    end_seed             = Int[],
+    process_config       = String[],
+)
+
+"""Reproducibility config string for an existing CSV row (parses its JSON once)."""
+_row_config_string(row)::String =
+    process_info_to_config_string(parse_process_info_json(String(row.process_config)))
+
+"""
+Load the survival-result store from `filename`, reading and parsing the file once.
+A missing file yields an empty store; a corrupt file raises before any expensive
+computation runs.
+"""
+function GraphEpimodels.load_survival_results(filename::String)::SurvivalStore
+    if !isfile(filename)
+        return SurvivalStore(_empty_survival_df(), String[])
+    end
+    local df
+    try
+        df = CSV.read(filename, DataFrame)
+    catch e
+        error("Failed to read CSV file '$filename'. Please verify the file is not corrupted before running expensive computations. Error: $e")
+    end
+    config_strings = [_row_config_string(row) for row in eachrow(df)]
+    return SurvivalStore(df, config_strings)
+end
+
+"""Index of the row matching `(process_info, parameter_value)`, or `0` if none."""
+function _find_match(store::SurvivalStore, parameter_value::Float64,
+                     process_info::Dict{String, Any})::Int
+    target = process_info_to_config_string(process_info)
+    @inbounds for i in eachindex(store.config_strings)
+        if store.config_strings[i] == target && store.df[i, :parameter] == parameter_value
+            return i
+        end
+    end
+    return 0
+end
+
+"""
+Next starting seed for `(process_info, parameter_value)` against the in-memory
+store: `end_seed + 1` of the matching row, or `1` for a fresh start. No I/O.
+"""
+function GraphEpimodels.next_start_seed(store::SurvivalStore, parameter_value::Float64,
+                                        process_info::Dict{String, Any})::Int
+    idx = _find_match(store, parameter_value, process_info)
+    return idx == 0 ? 1 : store.df[idx, :end_seed] + 1
+end
+
+"""
+Record a batch of new results into the in-memory store. If a row for
+`(process_info, parameter_value)` exists, fold in the cumulative statistics;
+otherwise append a new row. Returns `true` if an existing row was updated. No I/O —
+call [`save_survival_results`](@ref) once afterwards to persist.
+"""
+function GraphEpimodels.record_survival_result!(
+    store::SurvivalStore,
+    parameter_value::Float64,
+    num_simulations::Int,
+    num_survivals::Int,
+    survival_probability::Float64,
+    std_error::Float64,
+    start_seed::Int,
+    end_seed::Int,
+    process_info::Dict{String, Any}
+)::Bool
+    idx = _find_match(store, parameter_value, process_info)
+
+    if idx != 0
+        # Fold the new batch into the existing row's cumulative statistics.
+        cumulative_num_sims      = store.df[idx, :num_simulations] + num_simulations
+        cumulative_num_survivals = store.df[idx, :num_survivals] + num_survivals
+        cumulative_survival_prob = cumulative_num_survivals / cumulative_num_sims
+        cumulative_std_error     = sqrt(cumulative_survival_prob *
+                                        (1 - cumulative_survival_prob) / cumulative_num_sims)
+
+        store.df[idx, :num_simulations]      = cumulative_num_sims
+        store.df[idx, :num_survivals]        = cumulative_num_survivals
+        store.df[idx, :survival_probability] = cumulative_survival_prob
+        store.df[idx, :std_error]            = cumulative_std_error
+        store.df[idx, :end_seed]             = end_seed
+        # start_seed and process_config stay as originally recorded.
+        return true
+    end
+
+    push!(store.df, (
+        parameter            = parameter_value,
+        num_simulations      = num_simulations,
+        num_survivals        = num_survivals,
+        survival_probability = survival_probability,
+        std_error            = std_error,
+        start_seed           = start_seed,
+        end_seed             = end_seed,
+        process_config       = process_info_to_json(process_info),
+    ))
+    push!(store.config_strings, process_info_to_config_string(process_info))
+    return false
+end
+
+"""Write the accumulated store to `filename` in a single pass."""
+function GraphEpimodels.save_survival_results(store::SurvivalStore, filename::String)
+    CSV.write(filename, store.df)
+    return nothing
+end
+
 """
 Get the next starting seed for a parameter sweep continuation.
 

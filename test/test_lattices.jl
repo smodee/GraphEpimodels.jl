@@ -301,10 +301,77 @@ end
     GraphEpimodels.remove_active_node!(t2, 1000)
 
     @test t1.active_nodes == t2.active_nodes  # equal contents...
-    n = length(pairs)
     for seed in 1:100
-        a = GraphEpimodels._weighted_sample_active_fast(t1, n, MersenneTwister(seed))
-        b = GraphEpimodels._weighted_sample_active_fast(t2, n, MersenneTwister(seed))
+        a = GraphEpimodels._weighted_sample_active(t1, MersenneTwister(seed))
+        b = GraphEpimodels._weighted_sample_active(t2, MersenneTwister(seed))
         @test a == b  # ...therefore identical selection for the same draw
     end
+end
+
+# The sampler no longer sorts per call: it reads `sorted_nodes`, which the
+# add/update/remove mutators must keep equal to sort(collect(keys(active_nodes)))
+# at all times. A drifted invariant would silently corrupt weighted selection, so
+# check it directly under a churn of every mutator path (insert, weight-only
+# update, update-to-zero removal, explicit removal, re-insert, overwrite).
+@testset "active tracker maintains sorted_nodes invariant" begin
+    t = GraphEpimodels.DictActiveTracker()
+    canonical(tr) = sort(collect(keys(tr.active_nodes)))
+    @test t.sorted_nodes == canonical(t)
+
+    GraphEpimodels.add_active_node!(t, 50, 2)
+    GraphEpimodels.add_active_node!(t, 10, 1)
+    GraphEpimodels.add_active_node!(t, 30, 3)
+    GraphEpimodels.add_active_node!(t, 20, 1)
+    @test t.sorted_nodes == canonical(t) == [10, 20, 30, 50]
+
+    GraphEpimodels.update_active_node!(t, 30, 5)   # weight-only: order unchanged
+    @test t.sorted_nodes == canonical(t) == [10, 20, 30, 50]
+
+    GraphEpimodels.add_active_node!(t, 50, 4)       # overwrite existing: no dup insert
+    @test t.sorted_nodes == canonical(t) == [10, 20, 30, 50]
+
+    GraphEpimodels.update_active_node!(t, 20, 0)    # drop to inactive via update
+    @test t.sorted_nodes == canonical(t) == [10, 30, 50]
+
+    GraphEpimodels.remove_active_node!(t, 10)       # explicit removal
+    GraphEpimodels.remove_active_node!(t, 999)      # absent: no-op, stays consistent
+    @test t.sorted_nodes == canonical(t) == [30, 50]
+
+    GraphEpimodels.update_active_node!(t, 5, 2)     # newly active via update inserts in order
+    @test t.sorted_nodes == canonical(t) == [5, 30, 50]
+
+    GraphEpimodels.clear_active_nodes!(t)
+    @test isempty(t.sorted_nodes) && isempty(t.active_nodes)
+end
+
+# SIR recovery now samples from a dense Vector with O(1) swap-removal, backed by a
+# node→index map. A stale index would not necessarily crash (indices can stay
+# in-range), so check the bookkeeping invariant directly across a full run: the
+# infected vector has no duplicates, its index map points each node to its own
+# slot, and together they exactly equal the graph's INFECTED nodes.
+@testset "SIR infected-set swap-remove bookkeeping invariant" begin
+    g = create_square_lattice(25, 25, :absorbing)
+    p = SIRProcess(g, 3.0, 1.0)
+    reset!(p, [num_nodes(g) ÷ 2]; rng_seed = 7)
+
+    function _infected_consistent(p)
+        nodes = p.infected_nodes
+        idx = p.infected_index
+        length(nodes) == length(idx) || return false
+        for (i, nd) in enumerate(nodes)
+            get(idx, nd, 0) == i || return false
+        end
+        # The dense set must match the graph's actual INFECTED nodes exactly.
+        Set(nodes) == Set(get_nodes_in_state(g, INFECTED))
+    end
+
+    @test _infected_consistent(p)
+    steps = 0
+    ok = true
+    while is_active(p) && steps < 200_000
+        step!(p); steps += 1
+        ok &= _infected_consistent(p)
+    end
+    @test ok
+    @test isempty(p.infected_nodes) && isempty(p.infected_index)  # ran to extinction
 end

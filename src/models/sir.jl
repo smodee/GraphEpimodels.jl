@@ -23,15 +23,17 @@ Uses a two-component rate structure:
 - Recovery events: total rate γ × (number of infected nodes)
 
 Active node tracking (`DictActiveTracker`) is used for infection events only
-(weighted by susceptible neighbor count). A separate `Set{Int}` tracks all
-infected nodes for O(1)-per-step recovery sampling.
+(weighted by susceptible neighbor count). Recovery is uniform over *all* infected
+nodes, so a dense `Vector{Int}` of infected node ids (with a `node → index` map)
+tracks them for O(1) recovery sampling and O(1) swap-removal.
 
 # Fields
 - `graph::AbstractEpidemicGraph`: The underlying graph
 - `β::Float64`: Transmission rate per infectious contact
 - `γ::Float64`: Recovery rate
 - `active_tracker::DictActiveTracker`: Infected nodes with susceptible neighbors
-- `infected_nodes::Set{Int}`: All currently infected nodes
+- `infected_nodes::Vector{Int}`: All currently infected nodes (dense, unordered)
+- `infected_index::Dict{Int,Int}`: node_id → its position in `infected_nodes`
 - `time::Float64`: Current simulation time
 - `steps::Int`: Number of steps executed
 - `rng::AbstractRNG`: Random number generator
@@ -44,7 +46,12 @@ mutable struct SIRProcess{G<:AbstractEpidemicGraph, R<:AbstractRNG} <: SIRLikePr
     β::Float64
     γ::Float64
     active_tracker::DictActiveTracker
-    infected_nodes::Set{Int}
+    # Recovery picks a uniformly random infected node. A dense Vector gives O(1)
+    # index sampling, and the parallel node→index map turns removal into an O(1)
+    # swap-with-last (vs. the previous Set, whose only random access was an
+    # O(#infected) iteration walk to the k-th element — linear per recovery step).
+    infected_nodes::Vector{Int}
+    infected_index::Dict{Int, Int}
     time::Float64
     steps::Int
     rng::R
@@ -60,7 +67,7 @@ mutable struct SIRProcess{G<:AbstractEpidemicGraph, R<:AbstractRNG} <: SIRLikePr
         _validate_rates("Transmission rate β" => β, "Recovery rate γ" => γ)
         neighbor_buf = Int[]; susceptible_buf = Int[]
         sizehint!(neighbor_buf, 8); sizehint!(susceptible_buf, 8)
-        new{G,R}(graph, β, γ, DictActiveTracker(), Set{Int}(), 0.0, 0, rng,
+        new{G,R}(graph, β, γ, DictActiveTracker(), Int[], Dict{Int, Int}(), 0.0, 0, rng,
             neighbor_buf, susceptible_buf)
     end
 end
@@ -94,6 +101,31 @@ end
 function _clear_trackers!(process::SIRProcess)
     clear_active_nodes!(process.active_tracker)
     empty!(process.infected_nodes)
+    empty!(process.infected_index)
+end
+
+# =============================================================================
+# Infected-set maintenance (dense Vector + node→index map)
+# =============================================================================
+
+"""Append a newly infected node, recording its position for O(1) swap-removal."""
+@inline function _add_infected!(process::SIRProcess, node_id::Int)
+    push!(process.infected_nodes, node_id)
+    process.infected_index[node_id] = length(process.infected_nodes)
+end
+
+"""
+Remove a recovered node in O(1) by swapping the last infected node into its slot
+(keeping `infected_nodes` and `infected_index` consistent).
+"""
+@inline function _remove_infected!(process::SIRProcess, node_id::Int)
+    nodes = process.infected_nodes
+    idx = process.infected_index[node_id]
+    last_node = nodes[end]
+    @inbounds nodes[idx] = last_node
+    process.infected_index[last_node] = idx
+    pop!(nodes)
+    delete!(process.infected_index, node_id)
 end
 
 function reset!(process::SIRProcess,
@@ -108,7 +140,7 @@ function reset!(process::SIRProcess,
     infected_state = state_to_int(INFECTED)
     for node_id in initial_infected
         states[node_id] = infected_state
-        push!(process.infected_nodes, node_id)
+        _add_infected!(process, node_id)
     end
     for node_id in initial_infected
         susceptible_count = count_neighbors_by_state(process.graph, node_id, SUSCEPTIBLE)
@@ -134,7 +166,7 @@ function _sir_infect!(process::SIRProcess, acting_node::Int)
     end
 
     states[target] = state_to_int(INFECTED)
-    push!(process.infected_nodes, target)
+    _add_infected!(process, target)
     # Same S→I tracker maintenance as ZIM (shared helper). Re-fetch into
     # neighbor_buf (acting_node's neighbors are no longer needed).
     _track_si_infection!(process.active_tracker, process.graph,
@@ -146,7 +178,7 @@ function _sir_recover!(process::SIRProcess, recovering_node::Int)
     states = node_states_raw(process.graph)
     states[recovering_node] = state_to_int(REMOVED)
 
-    delete!(process.infected_nodes, recovering_node)
+    _remove_infected!(process, recovering_node)
     remove_active_node!(process.active_tracker, recovering_node)
     # Recovery I→R does not change any neighbor's susceptible-neighbor count,
     # so no active_tracker updates are needed for other nodes.
@@ -158,15 +190,7 @@ end
 
 function _sample_infected_uniform(process::SIRProcess)::Int
     n = length(process.infected_nodes)
-    target_idx = rand(process.rng, 1:n)
-    i = 0
-    for node in process.infected_nodes
-        i += 1
-        if i == target_idx
-            return node
-        end
-    end
-    return first(process.infected_nodes)
+    return @inbounds process.infected_nodes[rand(process.rng, 1:n)]
 end
 
 # =============================================================================
