@@ -301,10 +301,9 @@ end
     GraphEpimodels.remove_active_node!(t2, 1000)
 
     @test t1.active_nodes == t2.active_nodes  # equal contents...
-    n = length(pairs)
     for seed in 1:100
-        a = GraphEpimodels._weighted_sample_active_fast(t1, n, MersenneTwister(seed))
-        b = GraphEpimodels._weighted_sample_active_fast(t2, n, MersenneTwister(seed))
+        a = GraphEpimodels._weighted_sample_active(t1, MersenneTwister(seed))
+        b = GraphEpimodels._weighted_sample_active(t2, MersenneTwister(seed))
         @test a == b  # ...therefore identical selection for the same draw
     end
 end
