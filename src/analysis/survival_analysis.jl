@@ -286,47 +286,52 @@ function run_parameter_sweep(
     std_errors = Vector{Float64}(undef, n_params)
     num_sims_vec = Vector{Int}(undef, n_params)
     num_survivals_vec = Vector{Int}(undef, n_params)
-    
+
+    # Load any existing results once up front; per-parameter seed lookups and
+    # result records then run against this in-memory store, and the file is written
+    # once after the loop — instead of re-reading and rewriting the whole CSV (and
+    # re-parsing every row) on every parameter.
+    store = save_to !== nothing ? load_survival_results(save_to) : nothing
+
     for (i, param) in enumerate(parameter_values)
         factory = factory_generator(param)
-        
-        # Determine starting seed for this parameter
-        start_seed = if save_to !== nothing
+
+        # Determine starting seed for this parameter (and capture its config for the
+        # result record below).
+        process_info = nothing
+        start_seed = 1
+        if save_to !== nothing
             # Create sample process to extract configuration
             sample_process = factory()
             process_info = extract_process_info(sample_process)
             sample_process = nothing  # Allow garbage collection
-            
-            # Check CSV for existing results and determine continuation seed
-            get_next_start_seed(save_to, param, process_info)
-        else
-            # No CSV persistence - always start from seed 1
-            1
+
+            # In-memory continuation seed from the loaded store (no I/O).
+            start_seed = next_start_seed(store, param, process_info)
         end
 
         @info "Running parameter $i/$(length(parameter_values)): λ=$param, start seed=$start_seed"
-        
+
         # Run survival analysis
         results = estimate_survival_probability(
-            factory, initial_infected, criterion; 
-            start_seed=start_seed, 
+            factory, initial_infected, criterion;
+            start_seed=start_seed,
             kwargs...
         )
-        
+
         # Store results
         survival_probs[i] = results[:survival_probability]
         std_errors[i] = results[:survival_std_error]
         num_sims_vec[i] = results[:num_survivals] + results[:num_extinctions]
         num_survivals_vec[i] = results[:num_survivals]
-        
-        # Save to CSV if requested
-        if save_to !== nothing            
+
+        # Record into the in-memory store if persistence is requested.
+        if save_to !== nothing
             # Calculate end seed
             end_seed = start_seed + num_sims_vec[i] - 1
-            
-            # Update or append to CSV
-            was_updated = update_or_append_survival_result(
-                save_to,
+
+            was_updated = record_survival_result!(
+                store,
                 param,
                 num_sims_vec[i],
                 results[:num_survivals],
@@ -336,7 +341,7 @@ function run_parameter_sweep(
                 end_seed,
                 process_info
             )
-            
+
             if was_updated
                 @info "Parameter $param: Updated existing entry (seeds $start_seed-$end_seed)"
             else
@@ -344,7 +349,10 @@ function run_parameter_sweep(
             end
         end
     end
-    
+
+    # Persist all accumulated results in a single write.
+    save_to !== nothing && save_survival_results(store, save_to)
+
     return Dict{Symbol, Any}(
         :parameter_values => parameter_values,
         :num_simulations => num_sims_vec,

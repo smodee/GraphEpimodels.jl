@@ -271,6 +271,25 @@ get_next_start_seed(args...; kwargs...) =
 update_or_append_survival_result(args...; kwargs...) =
     error("update_or_append_survival_result $_CSV_HINT")
 
+# Batched in-memory survival-result store used by `run_parameter_sweep`. The
+# single-row `get_next_start_seed` / `update_or_append_survival_result` above each
+# re-read (and re-parse) the whole CSV — and the latter rewrites it — *per
+# parameter*, so a P-parameter sweep does O(P) reads + O(P) full rewrites and
+# re-parses every existing row O(P) times. These four functions instead load the
+# file once (`load_survival_results`), answer seed lookups and record results
+# against the in-memory store (`next_start_seed`, `record_survival_result!`), and
+# write the file once at the end (`save_survival_results`). Implemented in the
+# persistence extension; unexported (internal sweep machinery). The single-row
+# public functions are kept for direct/ad-hoc use.
+load_survival_results(args...; kwargs...) =
+    error("load_survival_results $_CSV_HINT")
+next_start_seed(args...; kwargs...) =
+    error("next_start_seed $_CSV_HINT")
+record_survival_result!(args...; kwargs...) =
+    error("record_survival_result! $_CSV_HINT")
+save_survival_results(args...; kwargs...) =
+    error("save_survival_results $_CSV_HINT")
+
 # =============================================================================
 # Exports
 # =============================================================================
