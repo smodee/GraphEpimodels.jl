@@ -1,0 +1,5 @@
+[deps]
+CairoMakie = "13f3f980-e62b-5c42-98c6-ff1f3baf88f0"
+GraphEpimodels = "550e1e89-e91b-4a9b-82ac-1b2c123456ab"
+NetworkLayout = "46757867-2c16-5918-afeb-47bfcb05e46a"
+PlutoUI = "7f904dfe-b85e-4ff6-b463-dae2292396a8"
