@@ -332,12 +332,130 @@ function _draw_network!(ax, viz::NetworkVisualizer, graph::AbstractEpidemicGraph
     return ax
 end
 
+# =============================================================================
+# Geographic basemap (drawn behind a GeoGraph's node-link diagram)
+# =============================================================================
+#
+# A geographic graph carries node positions as raw [lon, lat]. Plotting those
+# directly squashes the map, because 1° of longitude is shorter on the ground than
+# 1° of latitude by a factor cos(lat). Rather than reproject (which would need a
+# projection library and a basemap in matching coordinates), the axis box is given
+# the aspect ratio (Δlon·cos lat₀)/Δlat and framed to the basemap's bbox, so lon/lat
+# fill the box in correct proportion — the same trick whether drawing nodes, edges
+# or the coastline, all of which live in one lon/lat space.
+
+"""Axis-box aspect (width/height) that renders a lon/lat bbox in true proportion."""
+function _geo_aspect(bbox::NTuple{4,Float64})::Float64
+    lonmin, lonmax, latmin, latmax = bbox
+    lat0 = deg2rad((latmin + latmax) / 2)
+    dlon = max(lonmax - lonmin, eps())
+    dlat = max(latmax - latmin, eps())
+    return (dlon * cos(lat0)) / dlat
+end
+
+"""A clean (decoration-free) 2D axis with the geographic aspect for a basemap."""
+function _geo_axis(fig, bm::GraphEpimodels.Basemap; title::String = "",
+                   transparent_background::Bool = false)
+    bg = transparent_background ? :transparent : :white
+    ax = Axis(fig[1, 1]; title = title, aspect = _geo_aspect(bm.bbox), backgroundcolor = bg)
+    hidedecorations!(ax)
+    hidespines!(ax)
+    return ax
+end
+
+"""Frame the axis to the basemap's geographic bbox so the whole map is visible."""
+_apply_geo_limits!(ax, bm::GraphEpimodels.Basemap) =
+    limits!(ax, bm.bbox[1], bm.bbox[2], bm.bbox[3], bm.bbox[4])
+
+"""Convert a GeoJSON coordinate ring (`[[lon, lat], …]`) to `Point2f`s."""
+function _ring_points(ring)::Vector{Point2f}
+    pts = Vector{Point2f}(undef, length(ring))
+    @inbounds for (i, p) in enumerate(ring)
+        pts[i] = Point2f(Float64(p[1]), Float64(p[2]))
+    end
+    return pts
+end
+
+"""Append every polygon/line ring of one GeoJSON geometry to `rings`."""
+function _collect_rings!(rings::Vector{Vector{Point2f}}, gtype::String, coords)
+    coords === nothing && return
+    if gtype == "Polygon"
+        for ring in coords
+            push!(rings, _ring_points(ring))
+        end
+    elseif gtype == "MultiPolygon"
+        for poly in coords, ring in poly
+            push!(rings, _ring_points(ring))
+        end
+    elseif gtype == "LineString"
+        push!(rings, _ring_points(coords))
+    elseif gtype == "MultiLineString"
+        for line in coords
+            push!(rings, _ring_points(line))
+        end
+    end
+    return
+end
+
+"""
+Parse the GeoJSON file behind a [`Basemap`](@ref) into drawable rings.
+
+Reads with the package's dependency-free JSON reader and pulls coordinate rings
+out of `Polygon` / `MultiPolygon` / `LineString` / `MultiLineString` geometries
+(point geometries are ignored). Missing/unreadable file → no rings (the node-link
+diagram still draws). Parse once and reuse across animation frames.
+"""
+function _load_basemap_rings(bm::GraphEpimodels.Basemap)::Vector{Vector{Point2f}}
+    isfile(bm.path) || return Vector{Point2f}[]
+    data = GraphEpimodels.parse_json(read(bm.path, String))
+    rings = Vector{Point2f}[]
+    feats = data isa Dict ? get(data, "features", nothing) : nothing
+    if feats isa Vector
+        for f in feats
+            f isa Dict || continue
+            geom = get(f, "geometry", nothing)
+            geom isa Dict || continue
+            _collect_rings!(rings, String(get(geom, "type", "")), get(geom, "coordinates", nothing))
+        end
+    elseif data isa Dict
+        _collect_rings!(rings, String(get(data, "type", "")), get(data, "coordinates", nothing))
+    end
+    return rings
+end
+
+"""Draw basemap rings (filled land + coastline stroke) into an axis."""
+function _draw_basemap!(ax, rings::Vector{Vector{Point2f}};
+                        fill = (:gray, 0.08), stroke = (:gray, 0.55), strokewidth = 0.8)
+    for ring in rings
+        if length(ring) >= 3
+            poly!(ax, ring; color = fill, strokecolor = stroke, strokewidth = strokewidth)
+        elseif length(ring) >= 2
+            lines!(ax, ring; color = stroke, linewidth = strokewidth)
+        end
+    end
+    return ax
+end
+
+# A geographic graph is drawn as a node-link diagram on a map backdrop, but only
+# in 2D (lon/lat has no meaningful 3D embedding here). Accepts any visualizer so
+# the animation path can ask regardless of type — a LatticeVisualizer is never
+# geographic.
+_is_geographic(viz, graph) = viz isa NetworkVisualizer && viz.dim == 2 && has_basemap(graph)
+
 function GraphEpimodels.render_frame(viz::NetworkVisualizer, graph::AbstractEpidemicGraph,
                                      states_raw::Vector{Int8}; title::String = "",
                                      positions::Union{Matrix{Float64}, Nothing} = nothing)
     fig = Figure(size = viz.figure_size)
-    ax = _network_axis(fig, viz; title = title)
-    _draw_network!(ax, viz, graph, states_raw; positions = positions)
+    if _is_geographic(viz, graph)
+        bm = basemap(graph)
+        ax = _geo_axis(fig, bm; title = title)
+        _draw_basemap!(ax, _load_basemap_rings(bm))
+        _draw_network!(ax, viz, graph, states_raw; positions = positions)
+        _apply_geo_limits!(ax, bm)
+    else
+        ax = _network_axis(fig, viz; title = title)
+        _draw_network!(ax, viz, graph, states_raw; positions = positions)
+    end
     return fig
 end
 
@@ -445,11 +563,17 @@ function GraphEpimodels.animate_recording(rec::SimulationRecording;
     end
 
     is3d = viz isa NetworkVisualizer && viz.dim == 3
+    geo  = _is_geographic(viz, graph)
 
     # A general (node-link) graph gets a single fixed layout so nodes don't move
     # between frames; lattices use their intrinsic node positions.
     positions = viz isa NetworkVisualizer ? _resolve_positions(graph; dim = viz.dim) :
                 node_positions(graph)
+
+    # Geographic graphs draw a map backdrop; parse its rings once and redraw them
+    # each frame (the per-frame `empty!(ax)` clears everything, basemap included).
+    bm = geo ? basemap(graph) : nothing
+    basemap_rings = geo ? _load_basemap_rings(bm) : Vector{Vector{Point2f}}()
 
     title0 = show_title ? _frame_title(rec, 1) : ""
     if is3d
@@ -457,6 +581,12 @@ function GraphEpimodels.animate_recording(rec::SimulationRecording;
                               transparent_background = transparent_background)
         _apply_limits3!(ax, positions)
         base_azimuth = ax.azimuth[]
+    elseif geo
+        fig = Figure(size = figure_size,
+                     backgroundcolor = transparent_background ? :transparent : :white)
+        ax = _geo_axis(fig, bm; title = title0, transparent_background = transparent_background)
+        _apply_geo_limits!(ax, bm)
+        base_azimuth = 0.0
     else
         fig, ax = _make_axis(figure_size; title = title0,
                              transparent_background = transparent_background)
@@ -477,6 +607,9 @@ function GraphEpimodels.animate_recording(rec::SimulationRecording;
             if turntable
                 ax.azimuth[] = base_azimuth + 2π * (idx - 1) / n
             end
+        elseif geo
+            _draw_basemap!(ax, basemap_rings)   # redraw backdrop under the new frame
+            _apply_geo_limits!(ax, bm)          # re-assert limits after empty!
         end
         _draw_frame!(ax, viz, graph, rec.frames[idx];
                      positions = layout_pos,

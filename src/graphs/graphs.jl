@@ -417,6 +417,47 @@ function cell_polygons(graph::AbstractEpidemicGraph)::Vector{Matrix{Float64}}
           "that reports has_cells() == true")
 end
 
+"""
+A geographic backdrop drawn behind a graph's node-link diagram.
+
+A `Basemap` is a *handle*, not the image itself: it names a GeoJSON file (a
+coastline / administrative outline, in `[lon, lat]` per the GeoJSON spec) and the
+geographic `bbox` to frame. The actual coordinates are parsed and drawn lazily by
+the visualization layer (the CairoMakie extension), so the simulation object stays
+light and the heavy asset is touched only when something is actually rendered —
+the same separation of concerns as `has_cells` / `cell_polygons` for lattices, and
+as the optional Makie / CSV extensions.
+
+# Fields
+- `path::String`: Absolute path to the GeoJSON file.
+- `bbox::NTuple{4,Float64}`: `(lon_min, lon_max, lat_min, lat_max)` to frame the map.
+"""
+struct Basemap
+    path::String
+    bbox::NTuple{4,Float64}
+end
+
+"""
+Whether the graph carries a geographic [`Basemap`](@ref) to draw behind it.
+
+Default: `false`. A [`GeoGraph`](@ref) returns `true` when a basemap was bundled
+with its data. The visualizer consults this to decide whether to draw a map
+backdrop (and to switch the axis to a geographic aspect) before the node-link
+diagram.
+"""
+function has_basemap(graph::AbstractEpidemicGraph)::Bool
+    return false
+end
+
+"""
+The geographic [`Basemap`](@ref) for this graph, or `nothing` if it has none.
+
+Default: `nothing`. Consumed by the visualization layer; see [`has_basemap`](@ref).
+"""
+function basemap(graph::AbstractEpidemicGraph)::Union{Basemap,Nothing}
+    return nothing
+end
+
 # =============================================================================
 # Public API (External Interface with Type Safety)
 # =============================================================================
