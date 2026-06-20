@@ -132,7 +132,7 @@ md"""
 # ╔═╡ e9b00000-0000-0000-0000-000000000006
 md"""
 **Time** $(@bind time_model Select(["Continuous", "Discrete"]))
-   **Play time** $(@bind target_time Slider(3:1:30, default = 10, show_value = true)) s
+   **Play time** $(@bind target_time Slider(1:1:16, default = 10, show_value = true)) s
    stop on escape $(@bind stop_escape CheckBox(default = false))
 """
 
@@ -162,9 +162,12 @@ format $(@bind exp_fmt Select([".gif", ".mp4"]))
 md"""
 ---
 ### Notes & limitations
-- **Sampling is automatic:** pick a **time model** (continuous = equal sim-time
-  spacing, discrete = equal event spacing) and a **play time**; the run is sampled
-  so the clip lasts about that long. Extinct-early runs play briefly with a hint.
+- **Sampling is automatic (single pass):** pick a **time model** (continuous = equal
+  sim-time spacing, discrete = equal event spacing); the run is recorded once at an
+  adaptive rate (≈256–512 frames), with no separate measurement pass.
+- **Play time** only sets playback length and is applied **live in your browser** —
+  drag it any time without re-running or re-rendering. A run that dies early plays
+  its few frames and then holds on the final image to fill the time, with a hint.
 - The in-notebook **player runs in your browser**, so it plays smoothly. The preview
   always renders on a white background (so it's readable in any theme); **size** and
   **transparent** under Export affect the downloaded GIF/MP4 only.
@@ -205,8 +208,7 @@ begin
     const SEED_STATE = Ref(0)               # last seen "New seed" counter
     const SEED_USED = Ref(0)                # seed of the current recording
     const RENDER_CFG = Ref{Any}((scheme = :sir, dim = "2D", boundary = false,
-                                 grid = false, turntable = false,
-                                 target = 10.0))  # default appearance
+                                 grid = false, turntable = false))  # default appearance
     const LAST_RENDERED = Ref{Any}(nothing) # appearance of the current preview
     const EXPORT_STATE = Ref(0)             # last seen "Export" counter
     const EXPORT_OUT = Ref{Any}(nothing)
@@ -277,10 +279,11 @@ end
 # ╔═╡ e9b00000-0000-0000-0000-000000000018
 begin
     # Stage the appearance settings (cheap) without triggering a re-render.
-    # (transparent is export-only; the preview always renders opaque.)
+    # (transparent is export-only; the preview always renders opaque. Play time is
+    # NOT here — it's a pure playback choice handled live by the client-side player.)
     RENDER_CFG[] = (scheme = Symbol(scheme), dim = dim_choice,
                     boundary = show_boundary, grid = show_grid,
-                    turntable = turntable, target = Float64(target_time))
+                    turntable = turntable)
     nothing
 end
 
@@ -300,11 +303,11 @@ rendered = let
             viz.dim = rc.dim == "3D" ? 3 : 2
         end
         pos = has_cells(g) ? nothing : frame_positions(g, viz.dim)
-        plan = preview_plan(recording, rc.target)
+        plan = preview_indices(recording)
         frames = build_frame_cache(recording, viz, plan.indices;
                                    positions = pos, turntable = rc.turntable)
         LAST_RENDERED[] = rc
-        (frames = frames, fps = plan.fps, trivial = plan.trivial, indices = plan.indices)
+        (frames = frames, trivial = plan.trivial, indices = plan.indices)
     end
 end
 
@@ -312,7 +315,7 @@ end
 let
     rendered    # re-run after each render so the hint clears
     cur = (scheme = Symbol(scheme), dim = dim_choice, boundary = show_boundary,
-           grid = show_grid, turntable = turntable, target = Float64(target_time))
+           grid = show_grid, turntable = turntable)
     if recording !== nothing && LAST_RENDERED[] !== nothing && cur != LAST_RENDERED[]
         md"⚠️ _Appearance changed — click **🎨 Re-render** to update the preview._"
     else
@@ -324,7 +327,9 @@ end
 if rendered === nothing
     md"### ▶ Set parameters above and press **Run simulation**"
 else
-    frame_player(rendered.frames, rendered.fps)   # client-side: smooth play / pause / scrub
+    # Play time is applied here, client-side — changing it re-plans playback without
+    # re-rendering or re-simulating.
+    frame_player(rendered.frames, Float64(target_time))
 end
 
 # ╔═╡ e9b00000-0000-0000-0000-000000000011
@@ -333,9 +338,9 @@ if recording === nothing || rendered === nothing
 else
     (nS, nI, nR) = recording.counts[end]
     hint = rendered.trivial ?
-        "  ·  ⚠️ extinct early ($(ever_infected(recording)) ever infected) — try 🎲 New seed" : ""
+        "  ·  ⚠️ stopped after $(round(recording.times[end], digits = 2)) s / $(recording.steps[end]) steps — only $(ever_infected(recording)) ever infected; try 🎲 New seed" : ""
     md"""
-    **Final** t = $(round(recording.times[end], digits = 2))  ·  steps $(recording.steps[end])  ·  S=$nS, I=$nI, R=$nR  ·  captured $(num_frames(recording))  ·  preview $(length(rendered.indices)) @ $(round(rendered.fps, digits = 1)) fps  ·  seed $(SEED_USED[])$hint
+    **Final** t = $(round(recording.times[end], digits = 2))  ·  steps $(recording.steps[end])  ·  S=$nS, I=$nI, R=$nR  ·  captured $(num_frames(recording))  ·  preview $(length(rendered.indices)) frames  ·  play $(target_time) s  ·  seed $(SEED_USED[])$hint
     """
 end
 
