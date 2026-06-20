@@ -259,3 +259,221 @@ function record_simulation(process::AbstractEpidemicProcess;
 
     return SimulationRecording(graph, frames, times, steps, counts, _process_name(process))
 end
+
+# =============================================================================
+# Adaptive single-pass recorder — bounded frames without a measurement pass
+# =============================================================================
+#
+# `record_simulation` needs the run length up front to choose a sampler `dt` /
+# stride, which forces a throwaway measurement run before the recording run. The
+# adaptive recorder removes that second pass: it captures as the Gillespie loop
+# runs and keeps the frame count in `[max_frames ÷ 2, max_frames]` by halving the
+# rate whenever the buffer fills. Memory is bounded regardless of run length, the
+# total number of snapshot copies is O(max_frames · log(run length)) (NOT one per
+# event), and a surviving run still ends with ≥ `max_frames ÷ 2` frames.
+
+"""
+Keep every other frame (positions 1, 3, 5, …) across all four parallel buffers,
+halving the frame count while preserving uniform spacing and the first frame.
+
+Called on buffer overflow: for `:discrete` this doubles the effective step stride;
+for `:continuous` (on the established time grid) it doubles `dt`.
+"""
+function _decimate_keep_every_other!(frames::Vector{Vector{Int8}}, times::Vector{Float64},
+                                     steps::Vector{Int}, counts::Vector{NTuple{3, Int}})
+    keep = 1:2:length(frames)
+    keepat!(frames, keep)
+    keepat!(times,  keep)
+    keepat!(steps,  keep)
+    keepat!(counts, keep)
+    return nothing
+end
+
+"""
+Resample per-event snapshots onto a uniform time grid of `n` points spanning
+`[0, t_end]` by sample-and-hold: grid point `i` shows the latest captured frame
+whose time is ≤ that grid time. Assumes `times` is sorted ascending.
+
+This is the single conversion from "every event (irregular times)" to "equal
+simulation-time spacing", shared by the two continuous-mode paths that need it:
+the bootstrap hand-off at the first overflow, and a run that stops before the
+bootstrap fills. Returns fresh `(frames, times, steps, counts)` vectors; frame
+snapshots are shared by reference (they are never mutated after capture), so held
+grid points cost no extra memory.
+"""
+function _resample_to_time_grid(frames::Vector{Vector{Int8}}, times::Vector{Float64},
+                                steps::Vector{Int}, counts::Vector{NTuple{3, Int}},
+                                n::Int, t_end::Float64)
+    n = max(2, n)
+    dt = t_end > 0 ? t_end / (n - 1) : 0.0
+    src = length(times)
+    out_frames = Vector{Vector{Int8}}(undef, n)
+    out_times  = Vector{Float64}(undef, n)
+    out_steps  = Vector{Int}(undef, n)
+    out_counts = Vector{NTuple{3, Int}}(undef, n)
+    j = 1
+    @inbounds for i in 1:n
+        g = (i - 1) * dt
+        while j < src && times[j + 1] <= g
+            j += 1
+        end
+        out_frames[i] = frames[j]
+        out_times[i]  = g
+        out_steps[i]  = steps[j]
+        out_counts[i] = counts[j]
+    end
+    return out_frames, out_times, out_steps, out_counts
+end
+
+# Replace the buffers' contents in place with their resampling onto a uniform
+# time grid (see `_resample_to_time_grid`).
+function _replace_with_time_grid!(frames, times, steps, counts, n::Int, t_end::Float64)
+    nf, nt, ns, nc = _resample_to_time_grid(frames, times, steps, counts, n, t_end)
+    empty!(frames); append!(frames, nf)
+    empty!(times);  append!(times,  nt)
+    empty!(steps);  append!(steps,  ns)
+    empty!(counts); append!(counts, nc)
+    return nothing
+end
+
+"""
+Record a process in a **single pass** at an automatically-bounded frame rate, so
+no separate measurement run is needed to choose a sampler.
+
+Frames are captured as the Gillespie loop runs; whenever the buffer reaches
+`max_frames` the rate is halved (keeping every other frame), so the frame count
+stays in `[max_frames ÷ 2, max_frames]` and memory is bounded regardless of run
+length. A run that "survives" finishes with at least `max_frames ÷ 2` frames; a
+run that dies early keeps every event it produced.
+
+`time_model`:
+- `:discrete` — equal *event* spacing. Captures every step; on overflow keeps every
+  other frame and doubles the step stride (1 → 2 → 4 → …). Uniform in step count.
+- `:continuous` — equal *simulation-time* spacing. Captures every step until the
+  first overflow, then uses that measured span to lay down a uniform time grid
+  (`dt = t / (max_frames ÷ 2 - 1)`) and switches to sample-and-hold on the grid,
+  doubling `dt` on each further overflow. The initial rate is thus *measured*, not
+  guessed — there is no heuristic. A run that stops before the first overflow is
+  resampled onto a time grid at the end (`_resample_to_time_grid`).
+
+Like [`record_simulation`](@ref) it runs from the process's *current* state and
+always captures the initial (t=0) and final states. For a clean run, pass a
+freshly created process.
+
+# Arguments
+- `process::AbstractEpidemicProcess`: process to run and record
+- `time_model::Symbol`: `:continuous` (default) or `:discrete`
+- `max_frames::Int`: buffer cap, halved on overflow (default 512)
+- `max_time::Float64`: stop at this simulation time (default `Inf`)
+- `max_steps::Int`: stop after this many steps (default `typemax(Int)`)
+- `stop_on_escape::Bool`: stop once infection reaches the boundary (default false)
+
+# Returns
+- `SimulationRecording`
+"""
+function record_simulation_adaptive(process::AbstractEpidemicProcess;
+                                    time_model::Symbol = :continuous,
+                                    max_frames::Int = 512,
+                                    max_time::Float64 = Inf,
+                                    max_steps::Int = typemax(Int),
+                                    stop_on_escape::Bool = false)::SimulationRecording
+    time_model in (:continuous, :discrete) ||
+        throw(ArgumentError("time_model must be :continuous or :discrete, got :$time_model"))
+    max_frames >= 4 ||
+        throw(ArgumentError("record_simulation_adaptive requires max_frames >= 4, got $max_frames"))
+
+    graph  = get_graph(process)
+    frames = Vector{Vector{Int8}}()
+    times  = Float64[]
+    steps  = Int[]
+    counts = NTuple{3, Int}[]
+
+    push_state! = function (t::Float64, s::Int)
+        snapshot = copy(node_states_raw(graph))
+        push!(frames, snapshot)
+        push!(times, t)
+        push!(steps, s)
+        push!(counts, _count_states_raw(snapshot))
+    end
+
+    # Initial frame (t=0, step 0)
+    push_state!(current_time(process), step_count(process))
+
+    half = max_frames ÷ 2
+
+    if time_model == :discrete
+        stride = 1
+        while (current_time(process) < max_time &&
+               step_count(process) < max_steps &&
+               is_active(process))
+            d = step!(process)
+            s = step_count(process)
+            if s % stride == 0
+                push_state!(current_time(process), s)
+                if length(frames) >= max_frames
+                    _decimate_keep_every_other!(frames, times, steps, counts)
+                    stride *= 2
+                end
+            end
+            stop_on_escape && has_escaped(process) && break
+            d == Inf && break
+        end
+    else  # :continuous
+        grid_active = false
+        dt = 0.0
+        next_grid = 0.0
+        while (current_time(process) < max_time &&
+               step_count(process) < max_steps &&
+               is_active(process))
+            d = step!(process)
+            t = current_time(process)
+            s = step_count(process)
+
+            if !grid_active
+                # Bootstrap: capture every step until the first overflow.
+                push_state!(t, s)
+                if length(frames) >= max_frames
+                    t_boot = times[end]
+                    if t_boot > 0
+                        # Hand off to a uniform time grid measured from the bootstrap.
+                        _replace_with_time_grid!(frames, times, steps, counts, half, t_boot)
+                        dt = times[2] - times[1]
+                        next_grid = times[end] + dt
+                        grid_active = true
+                    else
+                        # Degenerate (all events still at t≈0): can't grid yet, just thin.
+                        _decimate_keep_every_other!(frames, times, steps, counts)
+                    end
+                end
+            else
+                # Sample-and-hold on the time grid, decimating *inside* the emit loop
+                # so a single large dt can't overflow past max_frames before we coarsen.
+                while next_grid <= t
+                    push_state!(next_grid, s)
+                    next_grid += dt
+                    if length(frames) >= max_frames
+                        _decimate_keep_every_other!(frames, times, steps, counts)
+                        dt *= 2
+                        next_grid = times[end] + dt
+                    end
+                end
+            end
+
+            stop_on_escape && has_escaped(process) && break
+            d == Inf && break
+        end
+
+        # Stopped before the bootstrap filled: still per-event, so convert to a time
+        # grid now over the full elapsed span (same operation as the hand-off).
+        if !grid_active && length(times) >= 2
+            _replace_with_time_grid!(frames, times, steps, counts, length(times), times[end])
+        end
+    end
+
+    # Always end on the true final state (avoid duplicating an already-captured one).
+    if isempty(steps) || steps[end] != step_count(process)
+        push_state!(current_time(process), step_count(process))
+    end
+
+    return SimulationRecording(graph, frames, times, steps, counts, _process_name(process))
+end

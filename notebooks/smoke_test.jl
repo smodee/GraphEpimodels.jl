@@ -63,15 +63,19 @@ function make_cfg(model, family;
      stop_escape = stop_escape, seed = seed)
 end
 
-# Full notebook pipeline: record → plan preview → render cache → build player.
+# Full notebook pipeline: record (single adaptive pass) → preview indices →
+# render cache → build player.
 function check(model, family; dim = 2, kwargs...)
     cfg = make_cfg(model, family; kwargs...)
     rec = build_recording(cfg, cfg.seed)
     @assert num_frames(rec) > 0 "no frames recorded for $model / $family"
+    @assert num_frames(rec) <= MAX_FRAMES + 1 "frame cap exceeded for $model / $family ($(num_frames(rec)))"
+    @assert issorted(rec.times) "times not nondecreasing for $model / $family"
+    @assert issorted(rec.steps) "steps not nondecreasing for $model / $family"
 
-    plan = preview_plan(rec, cfg.target_time)
+    plan = preview_indices(rec)
     @assert !isempty(plan.indices) "empty preview plan for $model / $family"
-    @assert 1.0 <= plan.fps <= 60.0 "preview fps out of range for $model / $family"
+    @assert length(plan.indices) <= PREVIEW_CAP "preview exceeds cap for $model / $family"
     @assert all(1 .<= plan.indices .<= num_frames(rec)) "preview indices out of range"
 
     g = rec.graph
@@ -89,11 +93,11 @@ function check(model, family; dim = 2, kwargs...)
     @assert length(cache) == length(plan.indices)
     @assert all(p -> length(p) > 0 && p[1:4] == UInt8[0x89, 0x50, 0x4e, 0x47], cache) "bad PNG"
 
-    html = frame_player(cache, plan.fps)
+    html = frame_player(cache, cfg.target_time)
     @assert occursin("data:image/png;base64", html.content) "player has no frames"
 
     println("  ok: $model on $family — captured $(num_frames(rec)), " *
-            "preview $(length(plan.indices)) @ $(round(plan.fps, digits=1)) fps, " *
+            "preview $(length(plan.indices)) frames, " *
             "export @ $(export_fps(rec, cfg.target_time)) fps, " *
             "trivial=$(plan.trivial), render $(round(render_s, digits=1))s")
     return rec
@@ -118,8 +122,8 @@ check("SIR", "Square lattice"; init_kind = "Random")
 
 println("== time-model + target-time variants ==")
 check("SIR", "Square lattice"; time_model = "Discrete")
-check("SIR", "Square lattice"; target_time = 5.0)
-check("SIR", "Square lattice"; target_time = 20.0)
+check("SIR", "Square lattice"; target_time = 3.0)
+check("SIR", "Square lattice"; target_time = 16.0)
 
 println("== centers are interior, not on the boundary ==")
 for (name, g) in (("triangular", create_triangular_lattice(40, 40)),
@@ -142,13 +146,43 @@ let cfg = (model = "SIR", graph_family = "Square lattice",
            mparams = (beta = 0.2, gamma = 1.0), init_kind = "Center", patch_r = 0,
            time_model = "Continuous", target_time = 10.0, stop_escape = false, seed = 1)
     rec = build_recording(cfg, 1)
-    plan = preview_plan(rec, cfg.target_time)
+    plan = preview_indices(rec)
     @assert plan.trivial "subcritical run should be flagged trivial"
-    # Trivial continuous runs still have N held frames — the plan must NOT return
-    # them all (that caused a render runaway); it plays a short clip instead.
-    @assert length(plan.indices) <= round(Int, PREVIEW_FPS * TRIVIAL_SECONDS) + 1 "trivial preview not capped ($(length(plan.indices)) of $(num_frames(rec)))"
+    # A run that dies early keeps only its (few) real events — it is NOT inflated to
+    # the survival floor; the client-side player holds the end frame to fill the time.
+    @assert num_frames(rec) < MAX_FRAMES ÷ 2 "early-death run inflated past the survival floor ($(num_frames(rec)))"
+    @assert all(1 .<= plan.indices .<= num_frames(rec)) "preview indices out of range"
     println("  ok: subcritical SIR flagged trivial (ever=$(ever_infected(rec)), " *
-            "preview $(length(plan.indices)) of $(num_frames(rec)) frames)")
+            "$(num_frames(rec)) frames, preview $(length(plan.indices)))")
+end
+
+println("== adaptive recorder: bounded frames + survival floor (high-event runs) ==")
+for tm in (:continuous, :discrete)
+    g = create_square_lattice(100, 100)
+    p = create_sir_process(g, 5.0, 1.0; initial_infected = :center, rng_seed = 1)
+    rec = record_simulation_adaptive(p; time_model = tm, max_frames = MAX_FRAMES)
+    @assert num_frames(rec) <= MAX_FRAMES + 1 "frame cap exceeded ($tm): $(num_frames(rec))"
+    @assert num_frames(rec) >= MAX_FRAMES ÷ 2 "survival floor missed ($tm): $(num_frames(rec))"
+    @assert issorted(rec.times) "times not nondecreasing ($tm)"
+    @assert issorted(rec.steps) "steps not nondecreasing ($tm)"
+    if tm == :discrete && num_frames(rec) >= 3
+        # Equal-event spacing: every frame but the appended final one sits on a
+        # uniform step grid (decimation re-spaces the whole buffer each overflow).
+        @assert allequal(diff(rec.steps[1:end - 1])) "discrete frames not equally step-spaced"
+    end
+    println("  ok: square(100×100) SIR $tm — $(num_frames(rec)) frames, " *
+            "t_end=$(round(rec.times[end], digits = 2)), steps=$(rec.steps[end])")
+end
+
+println("== adaptive recorder: short run keeps every event, stays bounded ==")
+let g = create_path_graph(30)
+    p = create_sir_process(g, 3.0, 1.0; initial_infected = [15], rng_seed = 1)
+    rec = record_simulation_adaptive(p; time_model = :discrete, max_frames = MAX_FRAMES)
+    @assert num_frames(rec) <= MAX_FRAMES + 1
+    @assert issorted(rec.steps) && issorted(rec.times)
+    # The whole run is far shorter than the cap, so nothing was decimated.
+    @assert num_frames(rec) < MAX_FRAMES "unexpectedly long path run ($(num_frames(rec)))"
+    println("  ok: path(30) SIR discrete — $(num_frames(rec)) frames, steps=$(rec.steps[end])")
 end
 
 println("== square-lattice grid renders on the non-transparent path ==")
@@ -168,7 +202,7 @@ let cfg = make_cfg("SIR", "Regular tree"; target_time = 4.0)
     rec = build_recording(cfg, cfg.seed)
     g = rec.graph
     viz = visualizer_for(g; color_scheme = :sir, figure_size = (300, 300)); viz.dim = 3
-    plan = preview_plan(rec, cfg.target_time)
+    plan = preview_indices(rec)
     pos = frame_positions(g, 3)
     still = build_frame_cache(rec, viz, plan.indices; positions = pos, turntable = false)
     spin  = build_frame_cache(rec, viz, plan.indices; positions = pos, turntable = true)

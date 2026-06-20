@@ -2,22 +2,23 @@
 engine.jl — the non-UI logic behind `epidemics_explorer.jl`.
 
 These pure functions translate the notebook's control values (a `cfg` NamedTuple)
-into a graph, a process, a frame sampler, and finally a `SimulationRecording`,
-plus two small rendering helpers. They use only the public GraphEpimodels API.
+into a graph, a process, and an adaptively-sampled `SimulationRecording` (a single
+pass — no measurement run), plus the preview/playback helpers. They use only the
+public GraphEpimodels API.
 
 The notebook `include`s this file so the same code is exercised headlessly by
 `smoke_test.jl`. Assumes `GraphEpimodels`, `Random`, `NetworkLayout`, and `Base64`
 are in scope (the notebook's setup cell and the smoke test both load them).
 """
 
-# --- Auto-sampling / playback tuning -----------------------------------------
-const EXPORT_FPS      = 30           # target fps for a smooth exported clip
-const PREVIEW_FPS     = 12           # target fps for the in-notebook player
-const PREVIEW_PX      = 440          # preview render resolution (player scales it to fit)
-const N_MAX           = 600          # cap on captured frames (memory)
-const PREVIEW_MAX     = 96           # cap on rendered preview frames (render cost + DOM)
-const SAFETY_STEPS    = 5_000_000    # hard stop for the measurement / record runs
-const TRIVIAL_SECONDS = 3.0          # extinct-early clips play for ~this long
+# --- Adaptive sampling / playback tuning -------------------------------------
+const MAX_FRAMES   = 512         # adaptive capture cap; halved on overflow (≥256 frames survive)
+const PREVIEW_PX    = 440        # preview render resolution (player scales it to fit)
+const PREVIEW_CAP   = 64         # cap on rendered preview frames — kept low for fast Run; some choppiness at long play times is acceptable
+const FPS_TARGET    = 16         # fps the preview player aims for
+const FPS_FLOOR     = 4          # min playback fps before holding the end frame; = PREVIEW_CAP ÷ max play time (16 s), so a surviving run plays full-length (down to this fps) without ever freezing
+const EXPORT_FPS    = 30         # cap on exported-clip fps (smoothness)
+const SAFETY_STEPS  = 5_000_000  # hard stop for the single recording run
 
 """
 Best single 'center' seed node for a graph type.
@@ -140,32 +141,22 @@ function build_process(cfg, graph, seed::Integer)
     end
 end
 
-"Frame sampler that yields ~`n` frames over a run of length `t_end` / `s_total` steps."
-function choose_sampler(time_model, t_end, s_total, n)
-    if time_model == "Discrete"
-        EveryNSteps(max(1, fld(s_total, n)))
-    else  # "Continuous"
-        t_end > 0 ? TimeInterval(t_end / n) : EveryStep()
-    end
-end
-
 """
-Build graph + process and record at an auto-chosen rate (measure-then-record).
+Build graph + process and record it in a single adaptive pass.
 
-A quick throwaway run measures the run's end-time / step count, then an identical
-(same-seed) run is recorded at a rate giving ~`EXPORT_FPS × target_time` frames —
-so the exported clip lasts about `target_time` seconds. `time_model` is
-`"Continuous"` (equal sim-time spacing) or `"Discrete"` (equal event spacing).
+`record_simulation_adaptive` captures frames as the run proceeds and halves the
+rate whenever the buffer reaches `MAX_FRAMES`, so the recording is bounded
+(≈256–512 frames) without a separate measurement run — and the recording no
+longer depends on `target_time` at all: play length is purely a playback choice
+(see `frame_player` / `export_fps`). `time_model` is `"Continuous"` (equal
+sim-time spacing) or `"Discrete"` (equal event spacing).
 """
 function build_recording(cfg, seed::Integer)
     graph = build_graph(cfg, seed)
-    stats = run_simulation(build_process(cfg, graph, seed);
-                           stop_on_escape = cfg.stop_escape, max_steps = SAFETY_STEPS)
-    n = clamp(round(Int, EXPORT_FPS * cfg.target_time), 2, N_MAX)
-    sampler = choose_sampler(cfg.time_model, stats[:time], stats[:step_count], n)
-    record_simulation(build_process(cfg, graph, seed);
-                      sampler = sampler, stop_on_escape = cfg.stop_escape,
-                      max_steps = SAFETY_STEPS)
+    time_model = cfg.time_model == "Discrete" ? :discrete : :continuous
+    record_simulation_adaptive(build_process(cfg, graph, seed);
+                               time_model = time_model, max_frames = MAX_FRAMES,
+                               stop_on_escape = cfg.stop_escape, max_steps = SAFETY_STEPS)
 end
 
 # --- Playback planning -------------------------------------------------------
@@ -184,27 +175,25 @@ function subsample_indices(n::Int, m::Int)
 end
 
 """
-Plan the in-notebook preview: which frames to render and at what fps.
+Choose which recording frames to rasterize for the in-notebook preview.
 
-A surviving run is subsampled so the clip lasts ~`target` seconds at up to
-`PREVIEW_FPS` (and at most `PREVIEW_MAX` rendered frames). A trivial (extinct-early)
-run is not stretched — it plays its few frames over ~`TRIVIAL_SECONDS`.
+The preview renders a fixed, target-independent budget of up to `PREVIEW_CAP`
+evenly-spaced frames *once*; the client-side player then controls playback
+duration/speed (and holds the end frame for short runs) entirely in the browser.
+So changing the play-time slider re-runs neither the simulation nor the render.
 """
-function preview_plan(rec, target)
+function preview_indices(rec)
     n = num_frames(rec)
-    # Duration the clip should last: a trivial run plays briefly, not stretched.
-    # (In continuous mode a dead run still has N held frames, so we MUST subsample
-    # the trivial case too — otherwise we'd render hundreds of duplicate frames.)
-    secs = is_trivial(rec) ? TRIVIAL_SECONDS : Float64(target)
-    m = clamp(round(Int, PREVIEW_FPS * secs), 2, min(n, PREVIEW_MAX))
-    idxs = subsample_indices(n, m)
-    (indices = idxs,
-     fps = clamp(length(idxs) / secs, 1.0, Float64(PREVIEW_FPS)),
+    (indices = subsample_indices(n, clamp(n, 1, PREVIEW_CAP)),
      trivial = is_trivial(rec))
 end
 
-"Export fps so the full recording lasts ~`target` seconds (capped to [5, EXPORT_FPS])."
-export_fps(rec, target) = clamp(round(Int, num_frames(rec) / max(target, 1e-9)), 5, EXPORT_FPS)
+"""
+Export fps so the recording lasts ~`target` seconds, clamped to
+`[FPS_FLOOR, EXPORT_FPS]`. A very short run plays at `FPS_FLOOR` (a brief clip)
+rather than being slowed to a crawl; the exported file is not padded.
+"""
+export_fps(rec, target) = clamp(round(Int, num_frames(rec) / max(target, 1e-9)), FPS_FLOOR, EXPORT_FPS)
 
 "Fixed node positions for a node-link graph (mirrors the package's resolver)."
 function frame_positions(graph, dim::Int)
@@ -281,21 +270,27 @@ function build_frame_cache(rec, viz, indices; positions = nothing,
 end
 
 """
-A self-contained HTML/JS player that animates `pngs` in the browser at `fps`, with
-play/pause and a scrub slider. Runs client-side, so it isn't capped by Pluto's
-per-tick round-trip (unlike a Clock-driven display cell).
+A self-contained HTML/JS player that animates `pngs` in the browser so the clip
+lasts ~`play_seconds`, with play/pause and a scrub slider.
+
+Playback length is decided entirely client-side, so changing it never re-renders
+or re-simulates. The player aims for `fps_target`; if the run has too few frames
+to fill `play_seconds` at that rate it eases the fps down to `fps_floor`, and if
+even that isn't enough (a run that died early) it holds the final frame to fill
+the remaining time rather than crawling. Short play times instead show an
+evenly-strided subset, so the clip is always about `play_seconds` long.
 """
-function frame_player(pngs, fps::Real)
+function frame_player(pngs, play_seconds::Real;
+                      fps_target::Real = FPS_TARGET, fps_floor::Real = FPS_FLOOR)
     isempty(pngs) && return Base.HTML("<em>No frames.</em>")
     srcs = join(("\"data:image/png;base64," * Base64.base64encode(p) * "\"" for p in pngs), ",")
-    interval = round(Int, 1000 / clamp(fps, 1.0, 60.0))
     uid = "ep_player_" * string(rand(UInt32); base = 16)
     Base.HTML("""
     <div id="$uid" style="display:flex;flex-direction:column;gap:6px;align-items:center;">
       <img class="ep-frame" style="max-width:100%;height:auto;background:#ffffff;border-radius:4px;" />
       <div style="display:flex;gap:8px;align-items:center;width:100%;max-width:640px;">
         <button class="ep-pp" style="width:3em;cursor:pointer;">⏸</button>
-        <input class="ep-scrub" type="range" min="0" max="$(length(pngs) - 1)" value="0" style="flex:1;">
+        <input class="ep-scrub" type="range" min="0" max="0" value="0" style="flex:1;">
         <span class="ep-cnt" style="font-variant-numeric:tabular-nums;min-width:5em;text-align:right;"></span>
       </div>
     </div>
@@ -304,17 +299,40 @@ function frame_player(pngs, fps::Real)
       const root = document.getElementById("$uid");
       if (!root) return;
       const frames = [$srcs];
+      const F = frames.length;
+      const D = $(Float64(play_seconds));
+      const fpsTarget = $(Float64(fps_target));
+      const fpsFloor = $(Float64(fps_floor));
+
+      // Choose an fps and a playlist of frame indices so the clip lasts ~D seconds.
+      let fps = fpsTarget;
+      let desired = Math.max(2, Math.round(D * fps));
+      if (desired > F) {                         // not enough frames at fpsTarget
+        fps = Math.min(fpsTarget, Math.max(fpsFloor, F / D));
+        desired = Math.max(2, Math.round(D * fps));
+      }
+      let playlist = [];
+      if (desired <= F) {                        // stride down to `desired` frames
+        for (let k = 0; k < desired; k++)
+          playlist.push(Math.round(k * (F - 1) / (desired - 1)));
+      } else {                                    // play all, then hold the last frame
+        for (let k = 0; k < F; k++) playlist.push(k);
+        while (playlist.length < desired) playlist.push(F - 1);
+      }
+      const interval = Math.round(1000 / Math.min(60, Math.max(1, fps)));
+
       const img = root.querySelector(".ep-frame");
       const pp = root.querySelector(".ep-pp");
       const scrub = root.querySelector(".ep-scrub");
       const cnt = root.querySelector(".ep-cnt");
+      scrub.max = playlist.length - 1;
       let i = 0, timer = null;
       function show(k) {
-        i = (k % frames.length + frames.length) % frames.length;
-        img.src = frames[i]; scrub.value = i;
-        cnt.textContent = (i + 1) + " / " + frames.length;
+        i = (k % playlist.length + playlist.length) % playlist.length;
+        img.src = frames[playlist[i]]; scrub.value = i;
+        cnt.textContent = (i + 1) + " / " + playlist.length;
       }
-      function play() { pp.textContent = "⏸"; clearInterval(timer); timer = setInterval(() => show(i + 1), $interval); }
+      function play() { pp.textContent = "⏸"; clearInterval(timer); timer = setInterval(() => show(i + 1), interval); }
       function pause() { pp.textContent = "▶"; clearInterval(timer); timer = null; }
       pp.onclick = () => (timer ? pause() : play());
       scrub.oninput = () => { pause(); show(parseInt(scrub.value)); };

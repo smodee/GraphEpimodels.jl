@@ -201,7 +201,7 @@ export NetworkVisualizer
 # Animated visualization
 include("visualization/animation.jl")
 export FrameSampler, EveryStep, EveryNSteps, TimeInterval
-export SimulationRecording, record_simulation, num_frames
+export SimulationRecording, record_simulation, record_simulation_adaptive, num_frames
 export animate_recording, animate_simulation
 
 # =============================================================================

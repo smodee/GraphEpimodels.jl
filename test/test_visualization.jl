@@ -138,6 +138,77 @@ sir_on(g) = create_sir_process(g, 0.6, 1.0; initial_infected = [1], rng_seed = 1
     end
 
     # -------------------------------------------------------------------------
+    # Adaptive single-pass recorder (backend-independent: no CairoMakie needed).
+    # Guards the bounded-memory frame budget, the equal-event / equal-time sampling
+    # guarantees, and the early-stop handling.
+    # -------------------------------------------------------------------------
+    @testset "record_simulation_adaptive" begin
+        # Buffers stay aligned, stamps are nondecreasing, the initial frame is at
+        # (t=0, step 0), and each per-frame (S, I, R) matches its snapshot.
+        function check_consistency(rec, g)
+            n = num_frames(rec)
+            @test length(rec.times) == n && length(rec.steps) == n && length(rec.counts) == n
+            @test issorted(rec.times) && issorted(rec.steps)
+            @test rec.times[1] == 0.0 && rec.steps[1] == 0
+            @test all(i -> sum(rec.counts[i]) == num_nodes(g), 1:n)
+            @test all(i -> rec.counts[i][2] == count(==(Int8(1)), rec.frames[i]), 1:n)  # I
+            @test all(i -> rec.counts[i][3] == count(==(Int8(2)), rec.frames[i]), 1:n)  # R
+        end
+
+        # A surviving (high-event) run is kept in [max_frames÷2, max_frames]; the +1
+        # is the always-appended true final frame.
+        @testset "bounded frames + survival floor: $tm" for tm in (:continuous, :discrete)
+            g = create_square_lattice(40, 40)
+            p = create_sir_process(g, 5.0, 1.0; initial_infected = :center, rng_seed = 1)
+            rec = record_simulation_adaptive(p; time_model = tm, max_frames = 512)
+            check_consistency(rec, g)
+            @test 256 <= num_frames(rec) <= 513
+            @test rec.steps[end] > 512                 # genuinely high-event
+            @test rec.steps[end] == step_count(p)      # ran to the true end
+        end
+
+        # Discrete keeps equal *event* spacing: every frame but the appended final
+        # one sits on a uniform step grid (decimation re-spaces the whole buffer).
+        @testset "discrete equal-event spacing" begin
+            g = create_square_lattice(40, 40)
+            p = create_sir_process(g, 5.0, 1.0; initial_infected = :center, rng_seed = 1)
+            rec = record_simulation_adaptive(p; time_model = :discrete, max_frames = 512)
+            @test allequal(diff(rec.steps[1:end - 1]))
+        end
+
+        # Continuous keeps equal *simulation-time* spacing: interior grid points are
+        # uniformly spaced (the final appended frame may sit off-grid).
+        @testset "continuous equal-time spacing" begin
+            g = create_square_lattice(40, 40)
+            p = create_sir_process(g, 5.0, 1.0; initial_infected = :center, rng_seed = 1)
+            rec = record_simulation_adaptive(p; time_model = :continuous, max_frames = 512)
+            d = diff(rec.times[1:end - 1])
+            @test d[1] > 0
+            @test all(x -> isapprox(x, d[1]; rtol = 1e-6), d)
+        end
+
+        # A run far shorter than the cap keeps every event it produced — no
+        # decimation, no padding — and still ends on the true final step.
+        @testset "short run keeps every event: $tm" for tm in (:continuous, :discrete)
+            g = create_path_graph(12)
+            steps_total = run_simulation(create_sir_process(g, 4.0, 1.0;
+                                initial_infected = [6], rng_seed = 1))[:step_count]
+            p = create_sir_process(g, 4.0, 1.0; initial_infected = [6], rng_seed = 1)
+            rec = record_simulation_adaptive(p; time_model = tm, max_frames = 512)
+            check_consistency(rec, g)
+            @test num_frames(rec) < 512
+            @test rec.steps[end] == steps_total
+        end
+
+        @testset "argument validation" begin
+            mk() = create_sir_process(create_path_graph(8), 1.0, 1.0;
+                                      initial_infected = [4], rng_seed = 1)
+            @test_throws ArgumentError record_simulation_adaptive(mk(); time_model = :bogus)
+            @test_throws ArgumentError record_simulation_adaptive(mk(); max_frames = 2)
+        end
+    end
+
+    # -------------------------------------------------------------------------
     # Rendering smoke test (needs CairoMakie). Loading CairoMakie (~10 s) plus
     # first-call compilation of the Makie draw paths dominate the suite, so this
     # tier is OFF by default and runs only when GRAPHEPIMODELS_VIZ_RENDER is set

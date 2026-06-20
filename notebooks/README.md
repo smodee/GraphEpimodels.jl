@@ -53,20 +53,24 @@ without using Pluto's built-in package manager.
 
 ## Notes
 
-- **Automatic sampling**: instead of fiddling with sampler/dt/fps, pick a **time
-  model** (continuous = equal sim-time spacing, discrete = equal event spacing) and
-  a **play time**; a quick measure-then-record pass samples the run so the clip
-  lasts about that long. Extinct-early runs play briefly with a "try a new seed"
-  hint instead of being stretched out.
+- **Automatic sampling (single pass)**: instead of fiddling with sampler/dt/fps,
+  pick a **time model** (continuous = equal sim-time spacing, discrete = equal event
+  spacing); the run is recorded once at an adaptive rate (≈256–512 frames) that
+  bounds memory without a separate measurement pass (`record_simulation_adaptive`).
+- **Play time is playback-only and live**: the **play time** slider sets how long
+  the clip lasts and is applied entirely in the browser, so dragging it never
+  re-runs or re-renders. Runs that die early play their few frames and then hold on
+  the final image to fill the time, with a "try a new seed" hint.
 - **Smooth in-notebook playback**: the preview frames are rendered once (CairoMakie)
-  and animated by a small **client-side JS player** (play / pause / scrub), so it
-  isn't capped by Pluto's per-tick round-trip. Previews render opaque at a fixed
+  and animated by a small **client-side JS player** (play / pause / scrub / duration),
+  so it isn't capped by Pluto's per-tick round-trip. Previews render opaque at a fixed
   resolution and scale to fit; **size** and **transparent** (under Export) affect the
-  downloaded GIF/MP4 only. Extinct-early runs play a short clip, not the full target.
+  downloaded GIF/MP4 only.
 - **Two-stage controls**: model / graph / parameter / seed changes take effect on
   **▶ Run simulation** (or **🎲 New seed**); appearance changes (colours, view,
   turntable) take effect on **🎨 Re-render** — change several, then re-render once.
-  A "settings changed" hint appears when the preview is stale.
+  (Play time needs neither — it updates live.) A "settings changed" hint appears
+  when the preview is stale.
 - **3D** graphs (cube / tree / star / complete): tick **turntable** to rotate the
   camera across the clip, in both the preview and the export.
 - A natural next step is a WGLMakie/GLMakie app for fully interactive playback + 3D.
