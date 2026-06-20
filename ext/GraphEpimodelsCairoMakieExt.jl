@@ -120,6 +120,12 @@ function _draw_lattice!(ax, viz::LatticeVisualizer, lattice::SquareLattice,
             img[c, r] = palette[Int(states_raw[idx]) + 1]
         end
         image!(ax, (0.5, width + 0.5), (0.5, height + 0.5), img; interpolate = false)
+        # `image!` draws no cell borders, so honour `show_grid` with an explicit
+        # overlay (the transparent `poly!` path above gets grid lines for free).
+        if viz.show_grid
+            vlines!(ax, 0.5:1:(width + 0.5); color = (:gray, 0.5), linewidth = 0.5)
+            hlines!(ax, 0.5:1:(height + 0.5); color = (:gray, 0.5), linewidth = 0.5)
+        end
     end
 
     if viz.show_boundary && has_boundary(lattice)
