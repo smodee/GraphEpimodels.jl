@@ -35,6 +35,8 @@ function gsize_for(f)
         (degree = 3, height = 6)
     elseif f == "d-ary tree"
         (branching = 2, height = 7)
+    elseif f == "Country graph"
+        (;)   # country + layers come from cfg.country / cfg.country_edges, not gsize
     else  # Erdos-Renyi
         (n = 120, p = 0.04)
     end
@@ -55,12 +57,14 @@ end
 function make_cfg(model, family;
                   init_kind = "Center patch", patch_r = 2,
                   time_model = "Continuous", target_time = 10.0,
-                  stop_escape = false, seed = 1)
+                  stop_escape = false, seed = 1,
+                  country = "norway_mock", country_edges = Symbol[])
     (model = model, graph_family = family,
      gsize = gsize_for(family), mparams = mparams_for(model),
      init_kind = init_kind, patch_r = patch_r,
      time_model = time_model, target_time = target_time,
-     stop_escape = stop_escape, seed = seed)
+     stop_escape = stop_escape, seed = seed,
+     country = country, country_edges = country_edges)
 end
 
 # Full notebook pipeline: record (single adaptive pass) → preview indices →
@@ -115,6 +119,11 @@ for f in ("Triangular lattice", "Hexagonal lattice", "Cube lattice",
     dim = f in ("Cube lattice",) ? 3 : 2
     check("SIR", f; dim = dim)
 end
+
+println("== country graph (GeoGraph) — full pipeline incl. basemap render ==")
+check("SIR", "Country graph")
+check("ZIM", "Country graph"; init_kind = "Center")
+check("SIR", "Country graph"; country_edges = [:road])        # single-layer subset
 
 println("== initial-condition variants ==")
 check("SIR", "Square lattice"; init_kind = "Center")

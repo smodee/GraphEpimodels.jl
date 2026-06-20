@@ -9,6 +9,7 @@ using Random
     include("test_complete_graph.jl")
     include("test_structured_graphs.jl")
     include("test_regular_tree.jl")
+    include("test_geograph.jl")
     include("test_visualization.jl")
     include("test_persistence.jl")
 end

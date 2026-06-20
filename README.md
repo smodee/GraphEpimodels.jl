@@ -59,6 +59,34 @@ Explicit adjacency-list representation for arbitrary topologies.
 | `create_graph_from_edges` | From edge list |
 | `create_erdos_renyi` / `create_gnp` / `create_gnm` | Erdős–Rényi random graphs |
 
+### Geographic graphs (`GeoGraph`)
+
+Real-world settlements connected by *labeled transport layers* (roads, railways,
+ferries, flights), loaded from a data bundle. Wraps an `AdjacencyGraph` (built from
+the union of the selected layers) and adds names, populations, `[lon, lat]`
+coordinates and a map backdrop — so simulations run on it exactly as on any other
+graph, and visualizations draw it on a basemap. The package ships one example
+country, `:norway_mock` — a small hand-authored placeholder (15 settlements) until
+the data builder (see below) produces real bundles.
+
+| Constructor / function | Description |
+|------------------------|-------------|
+| `load_geograph(name; edges)` | Load a bundle (e.g. `:norway_mock`); `edges` selects layers (`:all` or e.g. `[:road, :flight]`) |
+| `with_layers(g, layers)` | Re-select active edge layers (cheap; no re-read) |
+| `available_country_graphs()` | List bundles found in the data directory |
+| `country_edge_sets(name)` | The `(symbol, label)` layers a bundle offers |
+| `find_node(g, "Oslo")` | Node id of a settlement by name (e.g. for seeding) |
+
+```julia
+g = load_geograph(:norway_mock; edges = [:road, :rail])
+sir = create_sir_process(g, 3.0, 1.0; initial_infected = [find_node(g, "Oslo")])
+run_simulation(sir)
+```
+
+The bundle format is specified in [`docs/country-graph-format.md`](docs/country-graph-format.md);
+the (separate) tool that generates bundles from OpenStreetMap / GeoNames /
+OpenFlights is specified in [`docs/builder-spec.md`](docs/builder-spec.md).
+
 ---
 
 ## Quick Start

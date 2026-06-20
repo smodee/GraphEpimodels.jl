@@ -59,6 +59,12 @@ end
 graph_descriptor(lattice::Union{TriangularLattice, HexagonalLattice})::Dict{String, Any} =
     Dict{String, Any}("width" => lattice.width, "height" => lattice.height,
                       "boundary" => string(lattice.boundary))
+# A geographic graph is identified by its country and its active edge layers, so
+# survival results on different layer subsets (roads-only vs roads+flights) key
+# to distinct rows.
+graph_descriptor(g::GeoGraph)::Dict{String, Any} =
+    Dict{String, Any}("country" => string(g.name),
+                      "edges" => join(sort(string.(g.active_layers)), "+"))
 
 """
 Extract comprehensive process and graph information for serialization.

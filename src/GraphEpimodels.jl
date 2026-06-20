@@ -59,6 +59,11 @@ export NodeState, SUSCEPTIBLE, INFECTED, REMOVED, S, I, R
 export BoundaryCondition, ABSORBING, PERIODIC
 export state_to_int, int_to_state
 
+# Dependency-free JSON reader (used by the GeoGraph loader and, in the CairoMakie
+# extension, to read GeoJSON basemaps). Internal — included early so graph types
+# below can use it.
+include("core/json.jl")
+
 # Core graph interface functions
 export num_nodes, get_neighbors, get_neighbors!, node_states_raw, set_node_states_raw!
 export node_states, set_node_states!
@@ -69,6 +74,7 @@ export get_active_edges
 
 # Geometry interface (consumed by visualization)
 export supported_layout_dims, has_layout, layout_dim, node_positions, has_cells, cell_polygons
+export Basemap, has_basemap, basemap
 
 # Hypercubic lattice (ℤ^D nearest-neighbour) — SquareLattice = {2}, CubeLattice = {3}
 include("graphs/hypercubic_lattice.jl")
@@ -104,6 +110,14 @@ include("graphs/star.jl")
 export StarGraph, create_star_graph
 include("graphs/regular_tree.jl")
 export RegularTree, create_regular_tree, create_dary_tree
+
+# Geographic graphs (settlements + multi-modal transport layers); wraps an
+# AdjacencyGraph and adds geo-metadata. Example data lives in data/countries/.
+include("graphs/geograph.jl")
+export GeoGraph, load_geograph, with_layers
+export available_country_graphs, country_edge_sets
+export node_name, node_population, find_node, largest_settlement
+export active_layers, available_layers, layer_label, num_edges
 
 # =============================================================================
 # Epidemic Process Framework

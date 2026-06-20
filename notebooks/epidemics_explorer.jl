@@ -49,7 +49,7 @@ md"""
 ## 🦠 Setup
 
 **Model** $(@bind model Select(["SIR", "ZIM", "Maki-Thompson", "Chase-Escape"]))
-   **Graph** $(@bind graph_family Select(["Square lattice", "Triangular lattice", "Hexagonal lattice", "Cube lattice", "Complete graph", "Path", "Cycle", "Star", "Regular tree", "d-ary tree", "Erdos-Renyi"]))
+   **Graph** $(@bind graph_family Select(["Square lattice", "Triangular lattice", "Hexagonal lattice", "Cube lattice", "Complete graph", "Path", "Cycle", "Star", "Regular tree", "d-ary tree", "Erdos-Renyi", "Country graph"]))
 """
 
 # ╔═╡ e9b00000-0000-0000-0000-000000000003
@@ -85,12 +85,40 @@ md"""
         branching $(Child("branching", Slider(2:1:6, default = 2, show_value = true)))
         height $(Child("height", Slider(1:1:8, default = 6, show_value = true)))
         """
+    elseif f == "Country graph"
+        # Country + edge layers are chosen by their own controls below (the edge
+        # layers depend on the country, which a single `combine` can't express), so
+        # this branch contributes no size parameters.
+        md"""_Choose the country and edge layers below._"""
     else  # Erdos-Renyi
         md"""
         nodes n $(Child("n", Slider(10:5:500, default = 80, show_value = true)))
         edge prob p $(Child("p", Slider(0.0:0.005:0.3, default = 0.06, show_value = true)))
         """
     end
+end
+
+# ╔═╡ e9b00000-0000-0000-0000-000000000025
+begin
+    # Country dropdown — populated from whatever bundles live in data/countries/.
+    # `country_choice` is always bound (so `cfg` can read it); the control is only
+    # shown when the Country graph family is selected.
+    country_select = @bind country_choice Select(available_country_graphs())
+    graph_family == "Country graph" ? md"""**Country** $(country_select)""" : nothing
+end
+
+# ╔═╡ e9b00000-0000-0000-0000-000000000026
+begin
+    # One checkbox per edge layer the chosen country offers (depends on
+    # `country_choice`). `country_edges_sel` is a NamedTuple of booleans keyed by
+    # layer symbol; `cfg` turns the ticked ones into the active-layer list.
+    edge_controls = @bind country_edges_sel PlutoUI.combine() do Child
+        sets = country_edge_sets(country_choice)
+        inputs = [md"""$(Child(string(sym), CheckBox(default = true))) $(label)   """
+                  for (sym, label) in sets]
+        md"""**Edge layers**   $(inputs)"""
+    end
+    graph_family == "Country graph" ? edge_controls : nothing
 end
 
 # ╔═╡ e9b00000-0000-0000-0000-000000000004
@@ -200,6 +228,8 @@ cfg = (
     target_time  = Float64(target_time),
     stop_escape  = stop_escape,
     seed         = seed_field,
+    country      = country_choice,
+    country_edges = Symbol[Symbol(k) for (k, v) in pairs(country_edges_sel) if v],
 )
 
 # ╔═╡ e9b00000-0000-0000-0000-000000000022
@@ -354,6 +384,8 @@ end
 # ╟─e9b00000-0000-0000-0000-000000000001
 # ╟─e9b00000-0000-0000-0000-000000000002
 # ╟─e9b00000-0000-0000-0000-000000000003
+# ╟─e9b00000-0000-0000-0000-000000000025
+# ╟─e9b00000-0000-0000-0000-000000000026
 # ╟─e9b00000-0000-0000-0000-000000000004
 # ╟─e9b00000-0000-0000-0000-000000000005
 # ╟─e9b00000-0000-0000-0000-000000000006

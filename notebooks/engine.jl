@@ -32,6 +32,8 @@ cycle, complete, Erdős–Rényi) uses the middle-of-numbering fallback.
 function center_node(graph)
     if graph isa RegularTree || graph isa StarGraph
         1
+    elseif graph isa GeoGraph
+        largest_settlement(graph)           # country graph: seed the biggest city
     elseif hasmethod(get_center_node, (typeof(graph),))
         get_center_node(graph)              # square / cube: exact center
     elseif has_cells(graph)
@@ -115,6 +117,14 @@ function build_graph(cfg, seed::Integer)
         create_dary_tree(g.branching, g.height)
     elseif f == "Erdos-Renyi"
         create_erdos_renyi(g.n; p = g.p, rng = Random.Xoshiro(seed))
+    elseif f == "Country graph"
+        # Country + active edge layers come from their own controls (they depend on
+        # each other, so they live outside the `gsize` combine). Empty selection ⇒
+        # all layers, so the graph is never edgeless.
+        country = hasproperty(cfg, :country) ? cfg.country : first(available_country_graphs())
+        edges = (hasproperty(cfg, :country_edges) && !isempty(cfg.country_edges)) ?
+                cfg.country_edges : :all
+        load_geograph(Symbol(country); edges = edges)
     else
         error("Unknown graph family: $f")
     end
