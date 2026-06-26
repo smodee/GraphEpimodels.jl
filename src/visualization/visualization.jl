@@ -336,11 +336,20 @@ the graph provides a 3D layout) and falls back to a spring layout otherwise.
 Extra keyword arguments are forwarded to the visualizer constructor.
 """
 function visualizer_for(graph::AbstractLatticeGraph; kwargs...)::AbstractVisualizer
-    return has_cells(graph) ? LatticeVisualizer(; kwargs...) : NetworkVisualizer(; kwargs...)
+    return has_cells(graph) ? LatticeVisualizer(; kwargs...) : _network_visualizer_for(graph; kwargs...)
 end
 
 function visualizer_for(graph::AbstractEpidemicGraph; kwargs...)::AbstractVisualizer
-    return NetworkVisualizer(; kwargs...)
+    return _network_visualizer_for(graph; kwargs...)
+end
+
+# Build a node-link visualizer, defaulting its marker size to one adapted to the
+# graph's node count (so large graphs don't crowd) unless the caller gave an
+# explicit `node_size`. `_adaptive_node_size`/`NetworkVisualizer` are defined in
+# network_viz.jl (included after this file); referenced only at call time.
+function _network_visualizer_for(graph; node_size = nothing, kwargs...)
+    sz = node_size === nothing ? _adaptive_node_size(num_nodes(graph)) : node_size
+    return NetworkVisualizer(; node_size = sz, kwargs...)
 end
 
 # =============================================================================

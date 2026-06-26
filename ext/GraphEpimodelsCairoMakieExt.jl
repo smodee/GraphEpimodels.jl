@@ -323,7 +323,7 @@ function _draw_network!(ax, viz::NetworkVisualizer, graph::AbstractEpidemicGraph
             push!(segs, pts[i])
             push!(segs, pts[j])
         end
-        isempty(segs) || linesegments!(ax, segs; color = viz.edge_color)
+        isempty(segs) || linesegments!(ax, segs; color = viz.edge_color, linewidth = viz.edge_width)
     end
 
     colors = _node_colors(viz.color_scheme, states_raw)

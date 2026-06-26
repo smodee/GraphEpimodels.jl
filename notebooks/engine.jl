@@ -169,6 +169,43 @@ function build_recording(cfg, seed::Integer)
                                stop_on_escape = cfg.stop_escape, max_steps = SAFETY_STEPS)
 end
 
+# --- Node-link appearance (explorer "View" controls) -------------------------
+
+"""
+Map the explorer's **Edges** choice to `(show_edges, edge_color, edge_width)`.
+
+`"None"` hides edges entirely; `"Thin"` draws them faint and hairline (so a dense
+country graph reads as nodes-with-context rather than a web); `"Normal"` is the
+historical look.
+"""
+function edge_style_params(choice::AbstractString)
+    if choice == "None"
+        (false, (:gray, 0.5), 1.0)
+    elseif choice == "Thin"
+        (true, (:gray, 0.15), 0.4)
+    else  # "Normal"
+        (true, (:gray, 0.5), 1.0)
+    end
+end
+
+"""
+Apply the explorer's node-link appearance choices to `viz` in place: drawing
+dimension (`"2D"`/`"3D"`), edge style (see [`edge_style_params`](@ref)), and a
+node-size multiplier applied **on top of** the adaptive default that
+`visualizer_for` already chose for the graph's node count (so `node_scale = 1.0`
+means "auto").
+"""
+function apply_network_appearance!(viz::NetworkVisualizer; dim::AbstractString = "2D",
+                                   edges::AbstractString = "Normal", node_scale::Real = 1.0)
+    viz.dim = dim == "3D" ? 3 : 2
+    viz.node_size *= node_scale
+    se, ec, ew = edge_style_params(edges)
+    viz.show_edges = se
+    viz.edge_color = ec
+    viz.edge_width = ew
+    return viz
+end
+
 # --- Playback planning -------------------------------------------------------
 
 "Total nodes ever infected/removed in the final recorded frame."
