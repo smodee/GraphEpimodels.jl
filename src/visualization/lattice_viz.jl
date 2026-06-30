@@ -24,22 +24,26 @@ Static visualizer for regular lattices (square, triangular, hexagonal).
 - `show_boundary::Bool`: Outline the lattice boundary
 - `figure_size::Tuple{Int, Int}`: Figure dimensions in pixels
 - `show_grid::Bool`: Stroke cell outlines (cell path only)
+- `dark::Bool`: Dark theme — render on a dark background with light title text and
+  contrast-adjusted grid / boundary lines (default `false`).
 """
 mutable struct LatticeVisualizer <: StaticVisualizer
     color_scheme::Symbol
     show_boundary::Bool
     figure_size::Tuple{Int, Int}
     show_grid::Bool
+    dark::Bool
 
     function LatticeVisualizer(;
                               color_scheme::Symbol = :general,
                               show_boundary::Bool = false,
                               figure_size::Tuple{Int, Int} = (600, 600),
-                              show_grid::Bool = false)
+                              show_grid::Bool = false,
+                              dark::Bool = false)
         if color_scheme ∉ available_color_schemes()
             throw(ArgumentError("Unknown color scheme: $color_scheme. Available: $(available_color_schemes())"))
         end
-        new(color_scheme, show_boundary, figure_size, show_grid)
+        new(color_scheme, show_boundary, figure_size, show_grid, dark)
     end
 end
 

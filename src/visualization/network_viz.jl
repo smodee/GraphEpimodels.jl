@@ -31,6 +31,8 @@ Static node-link visualizer for `AdjacencyGraph`.
   drawn in 3D (intrinsic 3D layout where the graph provides one — star, complete,
   tree — otherwise a 3D force-directed layout). Lattices are 2D only and are not
   drawn by this visualizer.
+- `dark::Bool`: Dark theme — render on a dark background with light title text and
+  contrast-adjusted basemap / node outlines (default `false`).
 """
 mutable struct NetworkVisualizer <: StaticVisualizer
     color_scheme::Symbol
@@ -40,6 +42,7 @@ mutable struct NetworkVisualizer <: StaticVisualizer
     edge_color
     edge_width::Float64
     dim::Int
+    dark::Bool
 
     function NetworkVisualizer(;
                               color_scheme::Symbol = :general,
@@ -48,13 +51,14 @@ mutable struct NetworkVisualizer <: StaticVisualizer
                               show_edges::Bool = true,
                               edge_color = (:gray, 0.5),
                               edge_width::Real = 1.0,
-                              dim::Int = 2)
+                              dim::Int = 2,
+                              dark::Bool = false)
         color_scheme ∈ available_color_schemes() ||
             throw(ArgumentError("Unknown color scheme: $color_scheme"))
         dim == 2 || dim == 3 ||
             throw(ArgumentError("NetworkVisualizer dim must be 2 or 3, got $dim"))
         new(color_scheme, figure_size, Float64(node_size), show_edges, edge_color,
-            Float64(edge_width), dim)
+            Float64(edge_width), dim, dark)
     end
 end
 

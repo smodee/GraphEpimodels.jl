@@ -170,6 +170,7 @@ md"""**Colours** $(@bind scheme Select(string.(available_color_schemes()), defau
 # ╔═╡ e9b00000-0000-0000-0000-000000000008
 md"""
 **View** $(@bind dim_choice Select(["2D", "3D"]))
+   **Theme** $(@bind theme_choice Select(["Light", "Dark"]))
    **Edges** $(@bind edge_style Select(["Normal", "Thin", "None"]))
    **Node size** $(@bind node_scale Select([1.0 => "Auto", 0.6 => "Smaller", 0.4 => "Smallest", 1.5 => "Larger", 2.2 => "Largest"], default = 1.0))
    boundary $(@bind show_boundary CheckBox(default = false))
@@ -199,14 +200,17 @@ md"""
   drag it any time without re-running or re-rendering. A run that dies early plays
   its few frames and then holds on the final image to fill the time, with a hint.
 - The in-notebook **player runs in your browser**, so it plays smoothly. The preview
-  always renders on a white background (so it's readable in any theme); **size** and
-  **transparent** under Export affect the downloaded GIF/MP4 only.
+  honours the **Theme** (light/dark); **size** and **transparent** under Export affect
+  the downloaded GIF/MP4 only.
 - Model / graph / parameter / seed controls take effect on **▶ Run simulation** (or
-  **🎲 New seed**). Appearance controls (colours, view, **edges**, **node size**,
-  turntable) only take effect on **🎨 Re-render** — change several, then re-render once.
+  **🎲 New seed**). Appearance controls (colours, view, **theme**, **edges**,
+  **node size**, turntable) only take effect on **🎨 Re-render** — change several, then
+  re-render once.
 - **Node size** scales with the node count automatically (so big graphs don't crowd);
   **Node size = Auto** keeps that, the other steps nudge it up/down. **Edges** can be
   drawn normally, thin/translucent, or hidden — handy for dense country graphs.
+- **Theme = Dark** renders on a dark background (light title/outlines, contrast-adjusted
+  basemap) — applies to the preview and the export.
 - **3D** (cube / tree / star / complete): tick **turntable** to rotate the camera
   across the clip, in both the preview and the export.
 """
@@ -244,7 +248,8 @@ begin
     const SEED_USED = Ref(0)                # seed of the current recording
     const RENDER_CFG = Ref{Any}((scheme = :sir, dim = "2D", boundary = false,
                                  grid = false, turntable = false,
-                                 edges = "Normal", node_scale = 1.0))  # default appearance
+                                 edges = "Normal", node_scale = 1.0,
+                                 dark = false))  # default appearance
     const LAST_RENDERED = Ref{Any}(nothing) # appearance of the current preview
     const EXPORT_STATE = Ref(0)             # last seen "Export" counter
     const EXPORT_OUT = Ref{Any}(nothing)
@@ -301,14 +306,15 @@ export_panel = let
             animate_recording(recording; fps = fps, color_scheme = Symbol(scheme),
                               filename = path, figure_size = (fig_px, fig_px),
                               show_boundary = show_boundary, show_grid = show_grid,
-                              transparent_background = transparent)
+                              transparent_background = transparent,
+                              dark = (theme_choice == "Dark"))
         else
             # Configure the node-link visualizer exactly like the preview (dim, edge
-            # style, node-size override) so the exported clip matches what's shown.
+            # style, node-size override, theme) so the exported clip matches what's shown.
             viz = visualizer_for(g; color_scheme = Symbol(scheme),
                                  figure_size = (fig_px, fig_px))
             apply_network_appearance!(viz; dim = dim_choice, edges = edge_style,
-                                      node_scale = node_scale)
+                                      node_scale = node_scale, dark = (theme_choice == "Dark"))
             animate_recording(recording; fps = fps, filename = path,
                               figure_size = (fig_px, fig_px),
                               turntable = turntable, visualizer = viz)
@@ -325,7 +331,8 @@ begin
     # NOT here — it's a pure playback choice handled live by the client-side player.)
     RENDER_CFG[] = (scheme = Symbol(scheme), dim = dim_choice,
                     boundary = show_boundary, grid = show_grid,
-                    turntable = turntable, edges = edge_style, node_scale = node_scale)
+                    turntable = turntable, edges = edge_style, node_scale = node_scale,
+                    dark = (theme_choice == "Dark"))
     nothing
 end
 
@@ -341,9 +348,10 @@ rendered = let
         if viz isa LatticeVisualizer
             viz.show_boundary = rc.boundary
             viz.show_grid = rc.grid
+            viz.dark = rc.dark
         else
             apply_network_appearance!(viz; dim = rc.dim, edges = rc.edges,
-                                      node_scale = rc.node_scale)
+                                      node_scale = rc.node_scale, dark = rc.dark)
         end
         pos = has_cells(g) ? nothing : frame_positions(g, viz.dim)
         plan = preview_indices(recording)
@@ -359,7 +367,7 @@ let
     rendered    # re-run after each render so the hint clears
     cur = (scheme = Symbol(scheme), dim = dim_choice, boundary = show_boundary,
            grid = show_grid, turntable = turntable, edges = edge_style,
-           node_scale = node_scale)
+           node_scale = node_scale, dark = (theme_choice == "Dark"))
     if recording !== nothing && LAST_RENDERED[] !== nothing && cur != LAST_RENDERED[]
         md"⚠️ _Appearance changed — click **🎨 Re-render** to update the preview._"
     else
