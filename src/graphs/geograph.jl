@@ -4,8 +4,10 @@ Geographic graph type — real-world settlements connected by multi-modal transp
 `GeoGraph` is the package's type for graphs that live on a map: nodes are
 settlements (with names, populations and `[lon, lat]` coordinates) and edges come
 in *labeled layers* — e.g. roads, railways, ferries, flights. The example data
-shipped with the package is a country (`:norway`), hence the "country graph" name
-in the explorer UI, but the type itself is general (a region, a metro, …).
+shipped with the package is a small set of countries (`:denmark`, `:norway`,
+`:sweden`), hence the "country graph" name in the explorer UI, but the type itself
+is general (a region, a metro, …); further countries are user-built with the
+country-graph builder.
 
 Like [`ErdosRenyiGraph`](@ref), `GeoGraph` is a thin wrapper: it stores an inner
 [`AdjacencyGraph`](@ref) — built from the *union of the selected layers* — and

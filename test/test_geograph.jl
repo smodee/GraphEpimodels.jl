@@ -36,12 +36,58 @@ using Random
     # Registry / discovery
     # -------------------------------------------------------------------------
     @testset "registry" begin
-        @test "norway" in available_country_graphs()
+        # The package ships three Nordic sample bundles; users build any others
+        # themselves with the country-graph builder.
+        @test available_country_graphs() == ["denmark", "norway", "sweden"]
         @test !("norway_mock" in available_country_graphs())   # mock retired
         sets = country_edge_sets(:norway)
         @test sets == [(:road, "Roads"), (:rail, "Railways"),
                        (:ferry, "Ferries"), (:flight, "Flights")]
         @test_throws ArgumentError country_edge_sets(:atlantis)
+    end
+
+    # -------------------------------------------------------------------------
+    # Every shipped bundle loads, is well-formed, and simulates. Norway is
+    # exercised in depth below; this guards the others (and any bundle added
+    # later) against a malformed or unloadable ship.
+    # -------------------------------------------------------------------------
+    @testset "all shipped bundles" begin
+        expected = Dict(:denmark => (159, 269, "Copenhagen"),
+                        :norway  => (114, 287, "Oslo"),
+                        :sweden  => (277, 553, "Stockholm"))
+        for name in available_country_graphs()
+            slug = Symbol(name)
+            g = load_geograph(slug)
+            @test g isa GeoGraph
+            @test num_nodes(g) >= 1
+            @test available_layers(g) == [:road, :rail, :ferry, :flight]
+
+            # Basemap is declared and the file resolves.
+            @test has_basemap(g)
+            @test isfile(basemap(g).path)
+
+            # Every single-layer subset is a subgraph of the full union.
+            for layer in available_layers(g)
+                @test num_edges(with_layers(g, [layer])) <= num_edges(g)
+            end
+
+            # Node ids are usable and populations are non-negative.
+            @test all(node_population(g, i) >= 0 for i in 1:num_nodes(g))
+            @test 1 <= largest_settlement(g) <= num_nodes(g)
+
+            # Known sizes + the capital is both findable and the largest settlement.
+            n, m, capital = expected[slug]
+            @test num_nodes(g) == n
+            @test num_edges(g) == m
+            cid = find_node(g, capital)
+            @test cid !== nothing
+            @test largest_settlement(g) == cid
+
+            # A run seeded at the capital spreads beyond the seed.
+            sir = create_sir_process(g, 3.0, 1.0; initial_infected = [cid], rng_seed = 1)
+            run_simulation(sir; max_steps = 50_000)
+            @test count_states(g)[SUSCEPTIBLE] < num_nodes(g)
+        end
     end
 
     # -------------------------------------------------------------------------

@@ -24,6 +24,8 @@ One bundle = one directory, named after the graph, under a *countries directory*
 
 ```
 data/countries/
+├── denmark/
+├── sweden/
 └── norway/
     ├── geograph.json     # required — the graph bundle (see §2)
     └── basemap.geojson   # optional — geographic backdrop (see §3)
@@ -210,8 +212,10 @@ that easy later.
 }
 ```
 
-See [`data/countries/norway/`](../data/countries/norway/) for the shipped example
-(114 settlements, produced by the builder from OpenStreetMap / GeoNames / OpenFlights).
+See [`data/countries/`](../data/countries/) for the shipped samples — `denmark`
+(159 settlements), `norway` (114) and `sweden` (277), all produced by the builder
+from OpenStreetMap / GeoNames / OpenFlights. Other countries are not shipped; build
+them yourself with the builder (see [`builder-spec.md`](builder-spec.md)).
 
 ---
 
@@ -220,7 +224,7 @@ See [`data/countries/norway/`](../data/countries/norway/) for the shipped exampl
 ```julia
 using GraphEpimodels
 
-available_country_graphs()          # ["norway", ...]  — discovered bundles
+available_country_graphs()          # ["denmark", "norway", "sweden"]  — discovered bundles
 country_edge_sets(:norway)          # [(:road,"Roads"), (:rail,"Railways"), ...]
 
 g  = load_geograph(:norway)                       # all layers active

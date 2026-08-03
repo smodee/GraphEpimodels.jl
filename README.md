@@ -65,9 +65,12 @@ Real-world settlements connected by *labeled transport layers* (roads, railways,
 ferries, flights), loaded from a data bundle. Wraps an `AdjacencyGraph` (built from
 the union of the selected layers) and adds names, populations, `[lon, lat]`
 coordinates and a map backdrop — so simulations run on it exactly as on any other
-graph, and visualizations draw it on a basemap. The package ships one example
-country, `:norway` — 114 settlements with road / rail / ferry / flight layers,
-produced by the data builder (see below) from OpenStreetMap / GeoNames / OpenFlights.
+graph, and visualizations draw it on a basemap. The package ships three sample
+countries — `:denmark` (159 settlements), `:norway` (114) and `:sweden` (277), each
+with road / rail / ferry / flight layers — produced by the data builder (see below)
+from OpenStreetMap / GeoNames / OpenFlights. For any other country, generate your own
+bundle with the builder and drop it in `data/countries/` (or point
+`load_geograph(...; dir=...)` at your own directory).
 
 | Constructor / function | Description |
 |------------------------|-------------|

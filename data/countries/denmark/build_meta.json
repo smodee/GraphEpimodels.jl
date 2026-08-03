@@ -1,0 +1,60 @@
+{
+  "tool_version": "0.1.0",
+  "built_at": "2026-08-03T18:35:11.290521+00:00",
+  "parameters": {
+    "country": "DK",
+    "slug": "denmark",
+    "display_name": "Denmark",
+    "min_population": 5000,
+    "layers": [
+      "road",
+      "rail",
+      "ferry",
+      "flight"
+    ],
+    "contraction": "no-intermediate",
+    "knn_k": 4,
+    "max_edge_km": 400.0
+  },
+  "sources": {
+    "geonames": {
+      "url": "https://download.geonames.org/export/dump/DK.zip",
+      "fetched_at": "2026-08-03T18:35:12.207534+00:00"
+    },
+    "overpass_road": {
+      "url": "https://overpass-api.de",
+      "fetched_at": "2026-08-03T18:36:08.407026+00:00"
+    },
+    "overpass_rail": {
+      "url": "https://overpass-api.de",
+      "fetched_at": "2026-08-03T18:36:27.573883+00:00"
+    },
+    "overpass_ferry": {
+      "url": "https://overpass-api.de",
+      "fetched_at": "2026-08-03T18:38:20.741331+00:00"
+    },
+    "openflights": {
+      "url": "https://github.com/jpatokal/openflights",
+      "fetched_at": "2026-08-03T18:38:21.049168+00:00"
+    },
+    "natural_earth": {
+      "url": "https://naciscdn.org/naturalearth/50m/cultural/ne_50m_admin_0_countries.zip",
+      "fetched_at": "2026-08-03T18:38:21.847754+00:00"
+    }
+  },
+  "stats": {
+    "node_count": 159,
+    "edge_counts_by_layer": {
+      "road": 149,
+      "rail": 177,
+      "ferry": 4,
+      "flight": 9
+    },
+    "edge_count_union": 269,
+    "largest_component_coverage": 0.9937,
+    "population_range": [
+      5002,
+      1153615
+    ]
+  }
+}

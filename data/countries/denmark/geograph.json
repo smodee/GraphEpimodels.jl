@@ -1,0 +1,2843 @@
+{
+  "schema_version": 1,
+  "name": "denmark",
+  "display_name": "Denmark",
+  "crs": "EPSG:4326",
+  "layers": [
+    [
+      "road",
+      "Roads"
+    ],
+    [
+      "rail",
+      "Railways"
+    ],
+    [
+      "ferry",
+      "Ferries"
+    ],
+    [
+      "flight",
+      "Flights"
+    ]
+  ],
+  "nodes": [
+    {
+      "id": 1,
+      "name": "Copenhagen",
+      "lon": 12.56553,
+      "lat": 55.67594,
+      "population": 1153615
+    },
+    {
+      "id": 2,
+      "name": "Århus",
+      "lon": 10.21076,
+      "lat": 56.15674,
+      "population": 285273
+    },
+    {
+      "id": 3,
+      "name": "Odense",
+      "lon": 10.38831,
+      "lat": 55.39594,
+      "population": 180863
+    },
+    {
+      "id": 4,
+      "name": "Aalborg",
+      "lon": 9.9187,
+      "lat": 57.048,
+      "population": 142937
+    },
+    {
+      "id": 5,
+      "name": "Frederiksberg",
+      "lon": 12.53463,
+      "lat": 55.67938,
+      "population": 95029
+    },
+    {
+      "id": 6,
+      "name": "Esbjerg",
+      "lon": 8.45187,
+      "lat": 55.47028,
+      "population": 71698
+    },
+    {
+      "id": 7,
+      "name": "Randers",
+      "lon": 10.03639,
+      "lat": 56.4607,
+      "population": 62802
+    },
+    {
+      "id": 8,
+      "name": "Kolding",
+      "lon": 9.47216,
+      "lat": 55.4904,
+      "population": 61638
+    },
+    {
+      "id": 9,
+      "name": "Horsens",
+      "lon": 9.85034,
+      "lat": 55.86066,
+      "population": 61074
+    },
+    {
+      "id": 10,
+      "name": "Vejle",
+      "lon": 9.5357,
+      "lat": 55.70927,
+      "population": 60231
+    },
+    {
+      "id": 11,
+      "name": "Hvidovre",
+      "lon": 12.47708,
+      "lat": 55.64297,
+      "population": 53527
+    },
+    {
+      "id": 12,
+      "name": "Avedøre",
+      "lon": 12.45644,
+      "lat": 55.62722,
+      "population": 53443
+    },
+    {
+      "id": 13,
+      "name": "Klinteby Frihed",
+      "lon": 11.59603,
+      "lat": 55.19705,
+      "population": 53443
+    },
+    {
+      "id": 14,
+      "name": "Roskilde",
+      "lon": 12.08035,
+      "lat": 55.64152,
+      "population": 51916
+    },
+    {
+      "id": 15,
+      "name": "Herning",
+      "lon": 8.97662,
+      "lat": 56.13615,
+      "population": 50565
+    },
+    {
+      "id": 16,
+      "name": "Silkeborg",
+      "lon": 9.54508,
+      "lat": 56.1697,
+      "population": 49747
+    },
+    {
+      "id": 17,
+      "name": "Hørsholm",
+      "lon": 12.50111,
+      "lat": 55.88098,
+      "population": 47680
+    },
+    {
+      "id": 18,
+      "name": "Greve",
+      "lon": 12.3,
+      "lat": 55.58333,
+      "population": 47671
+    },
+    {
+      "id": 19,
+      "name": "Hedensted",
+      "lon": 9.7011,
+      "lat": 55.77043,
+      "population": 47099
+    },
+    {
+      "id": 20,
+      "name": "Valby",
+      "lon": 12.51388,
+      "lat": 55.66613,
+      "population": 46161
+    },
+    {
+      "id": 21,
+      "name": "Næstved",
+      "lon": 11.76092,
+      "lat": 55.22992,
+      "population": 44331
+    },
+    {
+      "id": 22,
+      "name": "Viborg",
+      "lon": 9.40201,
+      "lat": 56.45319,
+      "population": 41239
+    },
+    {
+      "id": 23,
+      "name": "Fredericia",
+      "lon": 9.75257,
+      "lat": 55.56568,
+      "population": 40886
+    },
+    {
+      "id": 24,
+      "name": "Rødovre",
+      "lon": 12.45373,
+      "lat": 55.68062,
+      "population": 40652
+    },
+    {
+      "id": 25,
+      "name": "Ballerup",
+      "lon": 12.36328,
+      "lat": 55.73165,
+      "population": 40000
+    },
+    {
+      "id": 26,
+      "name": "Charlottenlund",
+      "lon": 12.5745,
+      "lat": 55.75238,
+      "population": 40000
+    },
+    {
+      "id": 27,
+      "name": "Køge",
+      "lon": 12.18214,
+      "lat": 55.45802,
+      "population": 38304
+    },
+    {
+      "id": 28,
+      "name": "Vanløse",
+      "lon": 12.48713,
+      "lat": 55.68361,
+      "population": 37115
+    },
+    {
+      "id": 29,
+      "name": "Hillerød",
+      "lon": 12.30081,
+      "lat": 55.92791,
+      "population": 35357
+    },
+    {
+      "id": 30,
+      "name": "Taastrup",
+      "lon": 12.3016,
+      "lat": 55.65006,
+      "population": 35238
+    },
+    {
+      "id": 31,
+      "name": "Helsingør",
+      "lon": 12.6136,
+      "lat": 56.03606,
+      "population": 35048
+    },
+    {
+      "id": 32,
+      "name": "Holstebro",
+      "lon": 8.61607,
+      "lat": 56.36009,
+      "population": 32072
+    },
+    {
+      "id": 33,
+      "name": "Slagelse",
+      "lon": 11.35459,
+      "lat": 55.40276,
+      "population": 31896
+    },
+    {
+      "id": 34,
+      "name": "Viby",
+      "lon": 10.15145,
+      "lat": 56.12259,
+      "population": 31756
+    },
+    {
+      "id": 35,
+      "name": "Albertslund",
+      "lon": 12.36381,
+      "lat": 55.65691,
+      "population": 30000
+    },
+    {
+      "id": 36,
+      "name": "Holbæk",
+      "lon": 11.71279,
+      "lat": 55.7175,
+      "population": 29608
+    },
+    {
+      "id": 37,
+      "name": "Sønderborg",
+      "lon": 9.78917,
+      "lat": 54.90896,
+      "population": 27766
+    },
+    {
+      "id": 38,
+      "name": "Svendborg",
+      "lon": 10.60677,
+      "lat": 55.05982,
+      "population": 27300
+    },
+    {
+      "id": 39,
+      "name": "Allerød",
+      "lon": 12.35737,
+      "lat": 55.87035,
+      "population": 25867
+    },
+    {
+      "id": 40,
+      "name": "Hjørring",
+      "lon": 9.98229,
+      "lat": 57.46417,
+      "population": 25644
+    },
+    {
+      "id": 41,
+      "name": "Glostrup",
+      "lon": 12.40377,
+      "lat": 55.6666,
+      "population": 23128
+    },
+    {
+      "id": 42,
+      "name": "Ringsted",
+      "lon": 11.79011,
+      "lat": 55.4426,
+      "population": 23086
+    },
+    {
+      "id": 43,
+      "name": "Frederikshavn",
+      "lon": 10.53661,
+      "lat": 57.44073,
+      "population": 22672
+    },
+    {
+      "id": 44,
+      "name": "Haderslev",
+      "lon": 9.48771,
+      "lat": 55.24943,
+      "population": 22011
+    },
+    {
+      "id": 45,
+      "name": "Birkerød",
+      "lon": 12.42791,
+      "lat": 55.84759,
+      "population": 20877
+    },
+    {
+      "id": 46,
+      "name": "Farum",
+      "lon": 12.36066,
+      "lat": 55.80858,
+      "population": 20312
+    },
+    {
+      "id": 47,
+      "name": "Skive",
+      "lon": 9.02707,
+      "lat": 56.56699,
+      "population": 20190
+    },
+    {
+      "id": 48,
+      "name": "Brøndbyvester",
+      "lon": 12.41008,
+      "lat": 55.6455,
+      "population": 20000
+    },
+    {
+      "id": 49,
+      "name": "Stenløse",
+      "lon": 12.19723,
+      "lat": 55.76828,
+      "population": 19998
+    },
+    {
+      "id": 50,
+      "name": "Nykøbing Falster",
+      "lon": 11.87425,
+      "lat": 54.76906,
+      "population": 19976
+    },
+    {
+      "id": 51,
+      "name": "Ishøj",
+      "lon": 12.35182,
+      "lat": 55.61543,
+      "population": 19453
+    },
+    {
+      "id": 52,
+      "name": "Vordingborg",
+      "lon": 11.91057,
+      "lat": 55.00801,
+      "population": 17868
+    },
+    {
+      "id": 53,
+      "name": "Nyborg",
+      "lon": 10.78964,
+      "lat": 55.31274,
+      "population": 17525
+    },
+    {
+      "id": 54,
+      "name": "Solrød Strand",
+      "lon": 12.22227,
+      "lat": 55.53285,
+      "population": 17337
+    },
+    {
+      "id": 55,
+      "name": "Frederikssund",
+      "lon": 12.06896,
+      "lat": 55.83956,
+      "population": 16850
+    },
+    {
+      "id": 56,
+      "name": "Vallensbæk",
+      "lon": 12.38511,
+      "lat": 55.62199,
+      "population": 16515
+    },
+    {
+      "id": 57,
+      "name": "Aabenraa",
+      "lon": 9.41741,
+      "lat": 55.04434,
+      "population": 16401
+    },
+    {
+      "id": 58,
+      "name": "Tønder",
+      "lon": 8.86674,
+      "lat": 54.93306,
+      "population": 16401
+    },
+    {
+      "id": 59,
+      "name": "Middelfart",
+      "lon": 9.73054,
+      "lat": 55.50591,
+      "population": 16277
+    },
+    {
+      "id": 60,
+      "name": "Kalundborg",
+      "lon": 11.08864,
+      "lat": 55.67954,
+      "population": 16211
+    },
+    {
+      "id": 61,
+      "name": "Tilst",
+      "lon": 10.11283,
+      "lat": 56.19376,
+      "population": 15617
+    },
+    {
+      "id": 62,
+      "name": "Ikast",
+      "lon": 9.15768,
+      "lat": 56.13883,
+      "population": 14692
+    },
+    {
+      "id": 63,
+      "name": "Korsør",
+      "lon": 11.13857,
+      "lat": 55.32993,
+      "population": 14463
+    },
+    {
+      "id": 64,
+      "name": "Grenaa",
+      "lon": 10.87825,
+      "lat": 56.41578,
+      "population": 14176
+    },
+    {
+      "id": 65,
+      "name": "Varde",
+      "lon": 8.48069,
+      "lat": 55.62112,
+      "population": 14039
+    },
+    {
+      "id": 66,
+      "name": "Rønne",
+      "lon": 14.70664,
+      "lat": 55.10091,
+      "population": 13807
+    },
+    {
+      "id": 67,
+      "name": "Hedehusene",
+      "lon": 12.19827,
+      "lat": 55.64951,
+      "population": 13663
+    },
+    {
+      "id": 68,
+      "name": "Skanderborg",
+      "lon": 9.93177,
+      "lat": 56.03434,
+      "population": 13543
+    },
+    {
+      "id": 69,
+      "name": "Thisted",
+      "lon": 8.69491,
+      "lat": 56.95523,
+      "population": 13461
+    },
+    {
+      "id": 70,
+      "name": "Værløse",
+      "lon": 12.36856,
+      "lat": 55.78251,
+      "population": 13069
+    },
+    {
+      "id": 71,
+      "name": "Frederiksværk",
+      "lon": 12.0225,
+      "lat": 55.97073,
+      "population": 12718
+    },
+    {
+      "id": 72,
+      "name": "Brønderslev",
+      "lon": 9.94102,
+      "lat": 57.27021,
+      "population": 12549
+    },
+    {
+      "id": 73,
+      "name": "Nakskov",
+      "lon": 11.13567,
+      "lat": 54.83038,
+      "population": 12495
+    },
+    {
+      "id": 74,
+      "name": "Odder",
+      "lon": 10.153,
+      "lat": 55.97313,
+      "population": 12454
+    },
+    {
+      "id": 75,
+      "name": "Dragør",
+      "lon": 12.67221,
+      "lat": 55.5928,
+      "population": 12401
+    },
+    {
+      "id": 76,
+      "name": "Tranekær",
+      "lon": 10.84381,
+      "lat": 54.9976,
+      "population": 12367
+    },
+    {
+      "id": 77,
+      "name": "Løsning",
+      "lon": 9.69539,
+      "lat": 55.80236,
+      "population": 12220
+    },
+    {
+      "id": 78,
+      "name": "Haslev",
+      "lon": 11.96389,
+      "lat": 55.32346,
+      "population": 12119
+    },
+    {
+      "id": 79,
+      "name": "Hobro",
+      "lon": 9.79029,
+      "lat": 56.64306,
+      "population": 12071
+    },
+    {
+      "id": 80,
+      "name": "Brøndby Strand",
+      "lon": 12.42219,
+      "lat": 55.61782,
+      "population": 11915
+    },
+    {
+      "id": 81,
+      "name": "Gjellerup",
+      "lon": 10.13008,
+      "lat": 56.15683,
+      "population": 11406
+    },
+    {
+      "id": 82,
+      "name": "Espergærde",
+      "lon": 12.54733,
+      "lat": 55.99464,
+      "population": 11358
+    },
+    {
+      "id": 83,
+      "name": "Struer",
+      "lon": 8.59397,
+      "lat": 56.49205,
+      "population": 11317
+    },
+    {
+      "id": 84,
+      "name": "Kongens Lyngby",
+      "lon": 12.50378,
+      "lat": 55.77044,
+      "population": 10600
+    },
+    {
+      "id": 85,
+      "name": "Lystrup",
+      "lon": 10.46887,
+      "lat": 56.49839,
+      "population": 10273
+    },
+    {
+      "id": 86,
+      "name": "Lystrup",
+      "lon": 10.23778,
+      "lat": 56.2375,
+      "population": 10273
+    },
+    {
+      "id": 87,
+      "name": "Christianshavn",
+      "lon": 12.59541,
+      "lat": 55.67383,
+      "population": 10140
+    },
+    {
+      "id": 88,
+      "name": "Jyllinge",
+      "lon": 12.10315,
+      "lat": 55.75295,
+      "population": 10134
+    },
+    {
+      "id": 89,
+      "name": "Tårnby",
+      "lon": 12.60035,
+      "lat": 55.6303,
+      "population": 10000
+    },
+    {
+      "id": 90,
+      "name": "Ringkøbing",
+      "lon": 8.24402,
+      "lat": 56.09006,
+      "population": 9894
+    },
+    {
+      "id": 91,
+      "name": "Alholm",
+      "lon": 11.72303,
+      "lat": 54.66483,
+      "population": 9848
+    },
+    {
+      "id": 92,
+      "name": "Grindsted",
+      "lon": 8.9275,
+      "lat": 55.75726,
+      "population": 9750
+    },
+    {
+      "id": 93,
+      "name": "Smørumnedre",
+      "lon": 12.30276,
+      "lat": 55.74232,
+      "population": 9507
+    },
+    {
+      "id": 94,
+      "name": "Støvring",
+      "lon": 9.83839,
+      "lat": 56.88536,
+      "population": 9089
+    },
+    {
+      "id": 95,
+      "name": "Nykøbing Mors",
+      "lon": 8.85282,
+      "lat": 56.79334,
+      "population": 9033
+    },
+    {
+      "id": 96,
+      "name": "Humlebæk",
+      "lon": 12.5341,
+      "lat": 55.9618,
+      "population": 8965
+    },
+    {
+      "id": 97,
+      "name": "Fredensborg",
+      "lon": 12.40314,
+      "lat": 55.97558,
+      "population": 8965
+    },
+    {
+      "id": 98,
+      "name": "Sæby",
+      "lon": 10.52251,
+      "lat": 57.33188,
+      "population": 8838
+    },
+    {
+      "id": 99,
+      "name": "Løkken",
+      "lon": 9.71466,
+      "lat": 57.37047,
+      "population": 8828
+    },
+    {
+      "id": 100,
+      "name": "Måløv",
+      "lon": 12.32327,
+      "lat": 55.75528,
+      "population": 8787
+    },
+    {
+      "id": 101,
+      "name": "Løgten",
+      "lon": 10.31181,
+      "lat": 56.27459,
+      "population": 8659
+    },
+    {
+      "id": 102,
+      "name": "Helsinge",
+      "lon": 12.19752,
+      "lat": 56.02283,
+      "population": 8616
+    },
+    {
+      "id": 103,
+      "name": "Trørød",
+      "lon": 12.54432,
+      "lat": 55.83946,
+      "population": 8576
+    },
+    {
+      "id": 104,
+      "name": "Hundested",
+      "lon": 11.85044,
+      "lat": 55.96397,
+      "population": 8543
+    },
+    {
+      "id": 105,
+      "name": "Vejen",
+      "lon": 9.13795,
+      "lat": 55.48117,
+      "population": 8525
+    },
+    {
+      "id": 106,
+      "name": "Aars",
+      "lon": 9.51441,
+      "lat": 56.80399,
+      "population": 8474
+    },
+    {
+      "id": 107,
+      "name": "Hørning",
+      "lon": 10.03716,
+      "lat": 56.08701,
+      "population": 8395
+    },
+    {
+      "id": 108,
+      "name": "Hørning",
+      "lon": 10.20018,
+      "lat": 56.412,
+      "population": 8395
+    },
+    {
+      "id": 109,
+      "name": "Ribe",
+      "lon": 8.76966,
+      "lat": 55.33051,
+      "population": 8257
+    },
+    {
+      "id": 110,
+      "name": "Hadsten",
+      "lon": 10.04931,
+      "lat": 56.32819,
+      "population": 8254
+    },
+    {
+      "id": 111,
+      "name": "Hinnerup",
+      "lon": 10.06299,
+      "lat": 56.26608,
+      "population": 8164
+    },
+    {
+      "id": 112,
+      "name": "Hinnerup",
+      "lon": 9.05874,
+      "lat": 56.7347,
+      "population": 8164
+    },
+    {
+      "id": 113,
+      "name": "Sorø",
+      "lon": 11.55547,
+      "lat": 55.43184,
+      "population": 7999
+    },
+    {
+      "id": 114,
+      "name": "Nivå",
+      "lon": 12.50485,
+      "lat": 55.93405,
+      "population": 7997
+    },
+    {
+      "id": 115,
+      "name": "Svenstrup",
+      "lon": 9.84806,
+      "lat": 56.9723,
+      "population": 7650
+    },
+    {
+      "id": 116,
+      "name": "Svenstrup",
+      "lon": 9.94361,
+      "lat": 56.60263,
+      "population": 7650
+    },
+    {
+      "id": 117,
+      "name": "Skagen",
+      "lon": 10.58394,
+      "lat": 57.72093,
+      "population": 7571
+    },
+    {
+      "id": 118,
+      "name": "Vigerslev",
+      "lon": 12.48357,
+      "lat": 55.66288,
+      "population": 7526
+    },
+    {
+      "id": 119,
+      "name": "Vojens",
+      "lon": 9.30603,
+      "lat": 55.24639,
+      "population": 7475
+    },
+    {
+      "id": 120,
+      "name": "Brande",
+      "lon": 9.12798,
+      "lat": 55.94316,
+      "population": 7449
+    },
+    {
+      "id": 121,
+      "name": "Hasselager",
+      "lon": 10.10003,
+      "lat": 56.10555,
+      "population": 7437
+    },
+    {
+      "id": 122,
+      "name": "Bjerringbro",
+      "lon": 9.66065,
+      "lat": 56.37797,
+      "population": 7437
+    },
+    {
+      "id": 123,
+      "name": "Lemvig",
+      "lon": 8.31019,
+      "lat": 56.54856,
+      "population": 7330
+    },
+    {
+      "id": 124,
+      "name": "Tranbjerg",
+      "lon": 10.13605,
+      "lat": 56.09519,
+      "population": 7307
+    },
+    {
+      "id": 125,
+      "name": "Ebeltoft",
+      "lon": 10.6821,
+      "lat": 56.19442,
+      "population": 7204
+    },
+    {
+      "id": 126,
+      "name": "Ry",
+      "lon": 9.76505,
+      "lat": 56.09038,
+      "population": 7151
+    },
+    {
+      "id": 127,
+      "name": "Skjern",
+      "lon": 8.5,
+      "lat": 55.95,
+      "population": 7145
+    },
+    {
+      "id": 128,
+      "name": "Bramming",
+      "lon": 8.70007,
+      "lat": 55.46946,
+      "population": 7111
+    },
+    {
+      "id": 129,
+      "name": "Faaborg",
+      "lon": 10.24226,
+      "lat": 55.0951,
+      "population": 6944
+    },
+    {
+      "id": 130,
+      "name": "Hammel",
+      "lon": 9.86316,
+      "lat": 56.25762,
+      "population": 6854
+    },
+    {
+      "id": 131,
+      "name": "Slangerup",
+      "lon": 12.18333,
+      "lat": 55.85,
+      "population": 6826
+    },
+    {
+      "id": 132,
+      "name": "Gilleleje",
+      "lon": 12.31056,
+      "lat": 56.12196,
+      "population": 6781
+    },
+    {
+      "id": 133,
+      "name": "Billund",
+      "lon": 9.10785,
+      "lat": 55.73349,
+      "population": 6725
+    },
+    {
+      "id": 134,
+      "name": "Ringe",
+      "lon": 10.4786,
+      "lat": 55.23828,
+      "population": 6474
+    },
+    {
+      "id": 135,
+      "name": "Skælskør",
+      "lon": 11.29352,
+      "lat": 55.25058,
+      "population": 6472
+    },
+    {
+      "id": 136,
+      "name": "Åbybro",
+      "lon": 9.72996,
+      "lat": 57.16249,
+      "population": 6318
+    },
+    {
+      "id": 137,
+      "name": "Malling",
+      "lon": 10.19632,
+      "lat": 56.03632,
+      "population": 6194
+    },
+    {
+      "id": 138,
+      "name": "Hornslet",
+      "lon": 10.32041,
+      "lat": 56.3155,
+      "population": 6171
+    },
+    {
+      "id": 139,
+      "name": "Assens",
+      "lon": 9.90081,
+      "lat": 55.27023,
+      "population": 6050
+    },
+    {
+      "id": 140,
+      "name": "Rødekro",
+      "lon": 9.33531,
+      "lat": 55.07076,
+      "population": 5950
+    },
+    {
+      "id": 141,
+      "name": "Hellebæk",
+      "lon": 12.55782,
+      "lat": 56.06823,
+      "population": 5790
+    },
+    {
+      "id": 142,
+      "name": "Ålsgårde",
+      "lon": 12.53995,
+      "lat": 56.07559,
+      "population": 5790
+    },
+    {
+      "id": 143,
+      "name": "Kerteminde",
+      "lon": 10.65769,
+      "lat": 55.44903,
+      "population": 5748
+    },
+    {
+      "id": 144,
+      "name": "Maribo",
+      "lon": 11.50017,
+      "lat": 54.77662,
+      "population": 5722
+    },
+    {
+      "id": 145,
+      "name": "Nordborg",
+      "lon": 9.7408,
+      "lat": 55.05732,
+      "population": 5709
+    },
+    {
+      "id": 146,
+      "name": "Stavnsholt",
+      "lon": 12.40545,
+      "lat": 55.81479,
+      "population": 5658
+    },
+    {
+      "id": 147,
+      "name": "Neder Holluf",
+      "lon": 10.44824,
+      "lat": 55.36451,
+      "population": 5612
+    },
+    {
+      "id": 148,
+      "name": "Munkebo",
+      "lon": 10.55433,
+      "lat": 55.45553,
+      "population": 5571
+    },
+    {
+      "id": 149,
+      "name": "Hirtshals",
+      "lon": 9.95922,
+      "lat": 57.58812,
+      "population": 5532
+    },
+    {
+      "id": 150,
+      "name": "Bellinge",
+      "lon": 10.32045,
+      "lat": 55.33535,
+      "population": 5483
+    },
+    {
+      "id": 151,
+      "name": "Nibe",
+      "lon": 9.63917,
+      "lat": 56.9815,
+      "population": 5433
+    },
+    {
+      "id": 152,
+      "name": "Ølstykke",
+      "lon": 12.15509,
+      "lat": 55.79567,
+      "population": 5348
+    },
+    {
+      "id": 153,
+      "name": "Hornbæk",
+      "lon": 12.45693,
+      "lat": 56.09027,
+      "population": 5334
+    },
+    {
+      "id": 154,
+      "name": "Tune",
+      "lon": 12.16968,
+      "lat": 55.59287,
+      "population": 5300
+    },
+    {
+      "id": 155,
+      "name": "Otterup",
+      "lon": 10.39756,
+      "lat": 55.51527,
+      "population": 5269
+    },
+    {
+      "id": 156,
+      "name": "Hadsund",
+      "lon": 10.11682,
+      "lat": 56.71482,
+      "population": 5066
+    },
+    {
+      "id": 157,
+      "name": "Kolt",
+      "lon": 10.06986,
+      "lat": 56.10845,
+      "population": 5061
+    },
+    {
+      "id": 158,
+      "name": "Mårslet",
+      "lon": 10.16112,
+      "lat": 56.0669,
+      "population": 5004
+    },
+    {
+      "id": 159,
+      "name": "Nykøbing Sjælland",
+      "lon": 11.67109,
+      "lat": 55.92491,
+      "population": 5002
+    }
+  ],
+  "edges": [
+    {
+      "u": 67,
+      "v": 159,
+      "layer": "road"
+    },
+    {
+      "u": 7,
+      "v": 156,
+      "layer": "road"
+    },
+    {
+      "u": 92,
+      "v": 127,
+      "layer": "road"
+    },
+    {
+      "u": 17,
+      "v": 103,
+      "layer": "road"
+    },
+    {
+      "u": 2,
+      "v": 59,
+      "layer": "road"
+    },
+    {
+      "u": 40,
+      "v": 43,
+      "layer": "road"
+    },
+    {
+      "u": 9,
+      "v": 19,
+      "layer": "road"
+    },
+    {
+      "u": 22,
+      "v": 47,
+      "layer": "road"
+    },
+    {
+      "u": 12,
+      "v": 24,
+      "layer": "road"
+    },
+    {
+      "u": 139,
+      "v": 150,
+      "layer": "road"
+    },
+    {
+      "u": 71,
+      "v": 104,
+      "layer": "road"
+    },
+    {
+      "u": 97,
+      "v": 153,
+      "layer": "road"
+    },
+    {
+      "u": 65,
+      "v": 127,
+      "layer": "road"
+    },
+    {
+      "u": 34,
+      "v": 158,
+      "layer": "road"
+    },
+    {
+      "u": 124,
+      "v": 158,
+      "layer": "road"
+    },
+    {
+      "u": 43,
+      "v": 115,
+      "layer": "road"
+    },
+    {
+      "u": 30,
+      "v": 35,
+      "layer": "road"
+    },
+    {
+      "u": 17,
+      "v": 114,
+      "layer": "road"
+    },
+    {
+      "u": 27,
+      "v": 54,
+      "layer": "road"
+    },
+    {
+      "u": 85,
+      "v": 108,
+      "layer": "road"
+    },
+    {
+      "u": 33,
+      "v": 143,
+      "layer": "road"
+    },
+    {
+      "u": 32,
+      "v": 123,
+      "layer": "road"
+    },
+    {
+      "u": 22,
+      "v": 122,
+      "layer": "road"
+    },
+    {
+      "u": 11,
+      "v": 30,
+      "layer": "road"
+    },
+    {
+      "u": 26,
+      "v": 28,
+      "layer": "road"
+    },
+    {
+      "u": 18,
+      "v": 54,
+      "layer": "road"
+    },
+    {
+      "u": 46,
+      "v": 70,
+      "layer": "road"
+    },
+    {
+      "u": 116,
+      "v": 156,
+      "layer": "road"
+    },
+    {
+      "u": 11,
+      "v": 48,
+      "layer": "road"
+    },
+    {
+      "u": 43,
+      "v": 117,
+      "layer": "road"
+    },
+    {
+      "u": 64,
+      "v": 85,
+      "layer": "road"
+    },
+    {
+      "u": 13,
+      "v": 21,
+      "layer": "road"
+    },
+    {
+      "u": 79,
+      "v": 94,
+      "layer": "road"
+    },
+    {
+      "u": 21,
+      "v": 52,
+      "layer": "road"
+    },
+    {
+      "u": 141,
+      "v": 142,
+      "layer": "road"
+    },
+    {
+      "u": 22,
+      "v": 106,
+      "layer": "road"
+    },
+    {
+      "u": 59,
+      "v": 155,
+      "layer": "road"
+    },
+    {
+      "u": 99,
+      "v": 136,
+      "layer": "road"
+    },
+    {
+      "u": 113,
+      "v": 135,
+      "layer": "road"
+    },
+    {
+      "u": 11,
+      "v": 87,
+      "layer": "road"
+    },
+    {
+      "u": 2,
+      "v": 111,
+      "layer": "road"
+    },
+    {
+      "u": 109,
+      "v": 119,
+      "layer": "road"
+    },
+    {
+      "u": 57,
+      "v": 145,
+      "layer": "road"
+    },
+    {
+      "u": 109,
+      "v": 128,
+      "layer": "road"
+    },
+    {
+      "u": 59,
+      "v": 139,
+      "layer": "road"
+    },
+    {
+      "u": 58,
+      "v": 119,
+      "layer": "road"
+    },
+    {
+      "u": 121,
+      "v": 157,
+      "layer": "road"
+    },
+    {
+      "u": 61,
+      "v": 81,
+      "layer": "road"
+    },
+    {
+      "u": 75,
+      "v": 80,
+      "layer": "road"
+    },
+    {
+      "u": 51,
+      "v": 80,
+      "layer": "road"
+    },
+    {
+      "u": 110,
+      "v": 111,
+      "layer": "road"
+    },
+    {
+      "u": 53,
+      "v": 150,
+      "layer": "road"
+    },
+    {
+      "u": 14,
+      "v": 88,
+      "layer": "road"
+    },
+    {
+      "u": 86,
+      "v": 101,
+      "layer": "road"
+    },
+    {
+      "u": 101,
+      "v": 138,
+      "layer": "road"
+    },
+    {
+      "u": 38,
+      "v": 134,
+      "layer": "road"
+    },
+    {
+      "u": 24,
+      "v": 80,
+      "layer": "road"
+    },
+    {
+      "u": 29,
+      "v": 131,
+      "layer": "road"
+    },
+    {
+      "u": 47,
+      "v": 112,
+      "layer": "road"
+    },
+    {
+      "u": 27,
+      "v": 42,
+      "layer": "road"
+    },
+    {
+      "u": 59,
+      "v": 77,
+      "layer": "road"
+    },
+    {
+      "u": 96,
+      "v": 114,
+      "layer": "road"
+    },
+    {
+      "u": 68,
+      "v": 107,
+      "layer": "road"
+    },
+    {
+      "u": 79,
+      "v": 116,
+      "layer": "road"
+    },
+    {
+      "u": 94,
+      "v": 98,
+      "layer": "road"
+    },
+    {
+      "u": 57,
+      "v": 58,
+      "layer": "road"
+    },
+    {
+      "u": 82,
+      "v": 142,
+      "layer": "road"
+    },
+    {
+      "u": 12,
+      "v": 35,
+      "layer": "road"
+    },
+    {
+      "u": 18,
+      "v": 51,
+      "layer": "road"
+    },
+    {
+      "u": 57,
+      "v": 140,
+      "layer": "road"
+    },
+    {
+      "u": 40,
+      "v": 99,
+      "layer": "road"
+    },
+    {
+      "u": 53,
+      "v": 63,
+      "layer": "road"
+    },
+    {
+      "u": 28,
+      "v": 146,
+      "layer": "road"
+    },
+    {
+      "u": 11,
+      "v": 20,
+      "layer": "road"
+    },
+    {
+      "u": 18,
+      "v": 35,
+      "layer": "road"
+    },
+    {
+      "u": 43,
+      "v": 98,
+      "layer": "road"
+    },
+    {
+      "u": 65,
+      "v": 128,
+      "layer": "road"
+    },
+    {
+      "u": 28,
+      "v": 118,
+      "layer": "road"
+    },
+    {
+      "u": 33,
+      "v": 35,
+      "layer": "road"
+    },
+    {
+      "u": 4,
+      "v": 136,
+      "layer": "road"
+    },
+    {
+      "u": 24,
+      "v": 84,
+      "layer": "road"
+    },
+    {
+      "u": 22,
+      "v": 32,
+      "layer": "road"
+    },
+    {
+      "u": 77,
+      "v": 120,
+      "layer": "road"
+    },
+    {
+      "u": 7,
+      "v": 107,
+      "layer": "road"
+    },
+    {
+      "u": 9,
+      "v": 16,
+      "layer": "road"
+    },
+    {
+      "u": 74,
+      "v": 124,
+      "layer": "road"
+    },
+    {
+      "u": 37,
+      "v": 59,
+      "layer": "road"
+    },
+    {
+      "u": 32,
+      "v": 127,
+      "layer": "road"
+    },
+    {
+      "u": 3,
+      "v": 155,
+      "layer": "road"
+    },
+    {
+      "u": 49,
+      "v": 152,
+      "layer": "road"
+    },
+    {
+      "u": 40,
+      "v": 149,
+      "layer": "road"
+    },
+    {
+      "u": 59,
+      "v": 120,
+      "layer": "road"
+    },
+    {
+      "u": 42,
+      "v": 113,
+      "layer": "road"
+    },
+    {
+      "u": 38,
+      "v": 76,
+      "layer": "road"
+    },
+    {
+      "u": 58,
+      "v": 109,
+      "layer": "road"
+    },
+    {
+      "u": 32,
+      "v": 90,
+      "layer": "road"
+    },
+    {
+      "u": 68,
+      "v": 77,
+      "layer": "road"
+    },
+    {
+      "u": 107,
+      "v": 157,
+      "layer": "road"
+    },
+    {
+      "u": 108,
+      "v": 122,
+      "layer": "road"
+    },
+    {
+      "u": 44,
+      "v": 119,
+      "layer": "road"
+    },
+    {
+      "u": 125,
+      "v": 138,
+      "layer": "road"
+    },
+    {
+      "u": 122,
+      "v": 130,
+      "layer": "road"
+    },
+    {
+      "u": 1,
+      "v": 5,
+      "layer": "road"
+    },
+    {
+      "u": 119,
+      "v": 140,
+      "layer": "road"
+    },
+    {
+      "u": 64,
+      "v": 125,
+      "layer": "road"
+    },
+    {
+      "u": 1,
+      "v": 87,
+      "layer": "road"
+    },
+    {
+      "u": 84,
+      "v": 103,
+      "layer": "road"
+    },
+    {
+      "u": 63,
+      "v": 135,
+      "layer": "road"
+    },
+    {
+      "u": 3,
+      "v": 148,
+      "layer": "road"
+    },
+    {
+      "u": 55,
+      "v": 131,
+      "layer": "road"
+    },
+    {
+      "u": 95,
+      "v": 112,
+      "layer": "road"
+    },
+    {
+      "u": 32,
+      "v": 83,
+      "layer": "road"
+    },
+    {
+      "u": 6,
+      "v": 128,
+      "layer": "road"
+    },
+    {
+      "u": 30,
+      "v": 159,
+      "layer": "road"
+    },
+    {
+      "u": 5,
+      "v": 20,
+      "layer": "road"
+    },
+    {
+      "u": 28,
+      "v": 70,
+      "layer": "road"
+    },
+    {
+      "u": 11,
+      "v": 118,
+      "layer": "road"
+    },
+    {
+      "u": 106,
+      "v": 136,
+      "layer": "road"
+    },
+    {
+      "u": 8,
+      "v": 119,
+      "layer": "road"
+    },
+    {
+      "u": 84,
+      "v": 87,
+      "layer": "road"
+    },
+    {
+      "u": 35,
+      "v": 48,
+      "layer": "road"
+    },
+    {
+      "u": 110,
+      "v": 115,
+      "layer": "road"
+    },
+    {
+      "u": 12,
+      "v": 89,
+      "layer": "road"
+    },
+    {
+      "u": 39,
+      "v": 146,
+      "layer": "road"
+    },
+    {
+      "u": 27,
+      "v": 144,
+      "layer": "road"
+    },
+    {
+      "u": 50,
+      "v": 91,
+      "layer": "road"
+    },
+    {
+      "u": 90,
+      "v": 127,
+      "layer": "road"
+    },
+    {
+      "u": 82,
+      "v": 153,
+      "layer": "road"
+    },
+    {
+      "u": 61,
+      "v": 130,
+      "layer": "road"
+    },
+    {
+      "u": 143,
+      "v": 148,
+      "layer": "road"
+    },
+    {
+      "u": 72,
+      "v": 115,
+      "layer": "road"
+    },
+    {
+      "u": 31,
+      "v": 141,
+      "layer": "road"
+    },
+    {
+      "u": 60,
+      "v": 159,
+      "layer": "road"
+    },
+    {
+      "u": 74,
+      "v": 121,
+      "layer": "road"
+    },
+    {
+      "u": 49,
+      "v": 131,
+      "layer": "road"
+    },
+    {
+      "u": 6,
+      "v": 105,
+      "layer": "road"
+    },
+    {
+      "u": 21,
+      "v": 78,
+      "layer": "road"
+    },
+    {
+      "u": 15,
+      "v": 126,
+      "layer": "road"
+    },
+    {
+      "u": 134,
+      "v": 147,
+      "layer": "road"
+    },
+    {
+      "u": 35,
+      "v": 144,
+      "layer": "road"
+    },
+    {
+      "u": 10,
+      "v": 133,
+      "layer": "road"
+    },
+    {
+      "u": 10,
+      "v": 23,
+      "layer": "road"
+    },
+    {
+      "u": 41,
+      "v": 56,
+      "layer": "road"
+    },
+    {
+      "u": 69,
+      "v": 136,
+      "layer": "road"
+    },
+    {
+      "u": 88,
+      "v": 152,
+      "layer": "road"
+    },
+    {
+      "u": 45,
+      "v": 71,
+      "layer": "road"
+    },
+    {
+      "u": 94,
+      "v": 149,
+      "layer": "road"
+    },
+    {
+      "u": 30,
+      "v": 67,
+      "layer": "road"
+    },
+    {
+      "u": 13,
+      "v": 60,
+      "layer": "road"
+    },
+    {
+      "u": 110,
+      "v": 130,
+      "layer": "rail"
+    },
+    {
+      "u": 17,
+      "v": 103,
+      "layer": "rail"
+    },
+    {
+      "u": 40,
+      "v": 43,
+      "layer": "rail"
+    },
+    {
+      "u": 39,
+      "v": 45,
+      "layer": "rail"
+    },
+    {
+      "u": 37,
+      "v": 145,
+      "layer": "rail"
+    },
+    {
+      "u": 83,
+      "v": 112,
+      "layer": "rail"
+    },
+    {
+      "u": 9,
+      "v": 19,
+      "layer": "rail"
+    },
+    {
+      "u": 15,
+      "v": 32,
+      "layer": "rail"
+    },
+    {
+      "u": 94,
+      "v": 151,
+      "layer": "rail"
+    },
+    {
+      "u": 22,
+      "v": 47,
+      "layer": "rail"
+    },
+    {
+      "u": 139,
+      "v": 150,
+      "layer": "rail"
+    },
+    {
+      "u": 71,
+      "v": 104,
+      "layer": "rail"
+    },
+    {
+      "u": 132,
+      "v": 153,
+      "layer": "rail"
+    },
+    {
+      "u": 14,
+      "v": 27,
+      "layer": "rail"
+    },
+    {
+      "u": 61,
+      "v": 111,
+      "layer": "rail"
+    },
+    {
+      "u": 65,
+      "v": 127,
+      "layer": "rail"
+    },
+    {
+      "u": 68,
+      "v": 126,
+      "layer": "rail"
+    },
+    {
+      "u": 14,
+      "v": 36,
+      "layer": "rail"
+    },
+    {
+      "u": 124,
+      "v": 158,
+      "layer": "rail"
+    },
+    {
+      "u": 25,
+      "v": 100,
+      "layer": "rail"
+    },
+    {
+      "u": 82,
+      "v": 97,
+      "layer": "rail"
+    },
+    {
+      "u": 71,
+      "v": 131,
+      "layer": "rail"
+    },
+    {
+      "u": 34,
+      "v": 121,
+      "layer": "rail"
+    },
+    {
+      "u": 30,
+      "v": 35,
+      "layer": "rail"
+    },
+    {
+      "u": 1,
+      "v": 118,
+      "layer": "rail"
+    },
+    {
+      "u": 17,
+      "v": 114,
+      "layer": "rail"
+    },
+    {
+      "u": 27,
+      "v": 54,
+      "layer": "rail"
+    },
+    {
+      "u": 93,
+      "v": 100,
+      "layer": "rail"
+    },
+    {
+      "u": 32,
+      "v": 123,
+      "layer": "rail"
+    },
+    {
+      "u": 81,
+      "v": 107,
+      "layer": "rail"
+    },
+    {
+      "u": 22,
+      "v": 122,
+      "layer": "rail"
+    },
+    {
+      "u": 19,
+      "v": 77,
+      "layer": "rail"
+    },
+    {
+      "u": 25,
+      "v": 93,
+      "layer": "rail"
+    },
+    {
+      "u": 18,
+      "v": 54,
+      "layer": "rail"
+    },
+    {
+      "u": 11,
+      "v": 48,
+      "layer": "rail"
+    },
+    {
+      "u": 56,
+      "v": 80,
+      "layer": "rail"
+    },
+    {
+      "u": 43,
+      "v": 117,
+      "layer": "rail"
+    },
+    {
+      "u": 106,
+      "v": 130,
+      "layer": "rail"
+    },
+    {
+      "u": 12,
+      "v": 56,
+      "layer": "rail"
+    },
+    {
+      "u": 13,
+      "v": 21,
+      "layer": "rail"
+    },
+    {
+      "u": 70,
+      "v": 146,
+      "layer": "rail"
+    },
+    {
+      "u": 79,
+      "v": 94,
+      "layer": "rail"
+    },
+    {
+      "u": 21,
+      "v": 52,
+      "layer": "rail"
+    },
+    {
+      "u": 141,
+      "v": 142,
+      "layer": "rail"
+    },
+    {
+      "u": 35,
+      "v": 118,
+      "layer": "rail"
+    },
+    {
+      "u": 73,
+      "v": 144,
+      "layer": "rail"
+    },
+    {
+      "u": 36,
+      "v": 159,
+      "layer": "rail"
+    },
+    {
+      "u": 26,
+      "v": 103,
+      "layer": "rail"
+    },
+    {
+      "u": 92,
+      "v": 133,
+      "layer": "rail"
+    },
+    {
+      "u": 109,
+      "v": 128,
+      "layer": "rail"
+    },
+    {
+      "u": 59,
+      "v": 139,
+      "layer": "rail"
+    },
+    {
+      "u": 121,
+      "v": 157,
+      "layer": "rail"
+    },
+    {
+      "u": 61,
+      "v": 81,
+      "layer": "rail"
+    },
+    {
+      "u": 24,
+      "v": 41,
+      "layer": "rail"
+    },
+    {
+      "u": 110,
+      "v": 111,
+      "layer": "rail"
+    },
+    {
+      "u": 87,
+      "v": 118,
+      "layer": "rail"
+    },
+    {
+      "u": 20,
+      "v": 28,
+      "layer": "rail"
+    },
+    {
+      "u": 2,
+      "v": 86,
+      "layer": "rail"
+    },
+    {
+      "u": 26,
+      "v": 87,
+      "layer": "rail"
+    },
+    {
+      "u": 86,
+      "v": 101,
+      "layer": "rail"
+    },
+    {
+      "u": 140,
+      "v": 145,
+      "layer": "rail"
+    },
+    {
+      "u": 137,
+      "v": 158,
+      "layer": "rail"
+    },
+    {
+      "u": 6,
+      "v": 65,
+      "layer": "rail"
+    },
+    {
+      "u": 101,
+      "v": 138,
+      "layer": "rail"
+    },
+    {
+      "u": 89,
+      "v": 118,
+      "layer": "rail"
+    },
+    {
+      "u": 5,
+      "v": 12,
+      "layer": "rail"
+    },
+    {
+      "u": 33,
+      "v": 113,
+      "layer": "rail"
+    },
+    {
+      "u": 38,
+      "v": 134,
+      "layer": "rail"
+    },
+    {
+      "u": 30,
+      "v": 41,
+      "layer": "rail"
+    },
+    {
+      "u": 27,
+      "v": 42,
+      "layer": "rail"
+    },
+    {
+      "u": 29,
+      "v": 131,
+      "layer": "rail"
+    },
+    {
+      "u": 47,
+      "v": 112,
+      "layer": "rail"
+    },
+    {
+      "u": 96,
+      "v": 114,
+      "layer": "rail"
+    },
+    {
+      "u": 53,
+      "v": 143,
+      "layer": "rail"
+    },
+    {
+      "u": 68,
+      "v": 107,
+      "layer": "rail"
+    },
+    {
+      "u": 45,
+      "v": 84,
+      "layer": "rail"
+    },
+    {
+      "u": 27,
+      "v": 78,
+      "layer": "rail"
+    },
+    {
+      "u": 29,
+      "v": 97,
+      "layer": "rail"
+    },
+    {
+      "u": 14,
+      "v": 154,
+      "layer": "rail"
+    },
+    {
+      "u": 18,
+      "v": 51,
+      "layer": "rail"
+    },
+    {
+      "u": 49,
+      "v": 93,
+      "layer": "rail"
+    },
+    {
+      "u": 57,
+      "v": 140,
+      "layer": "rail"
+    },
+    {
+      "u": 55,
+      "v": 88,
+      "layer": "rail"
+    },
+    {
+      "u": 10,
+      "v": 120,
+      "layer": "rail"
+    },
+    {
+      "u": 40,
+      "v": 99,
+      "layer": "rail"
+    },
+    {
+      "u": 55,
+      "v": 152,
+      "layer": "rail"
+    },
+    {
+      "u": 53,
+      "v": 63,
+      "layer": "rail"
+    },
+    {
+      "u": 105,
+      "v": 119,
+      "layer": "rail"
+    },
+    {
+      "u": 16,
+      "v": 62,
+      "layer": "rail"
+    },
+    {
+      "u": 16,
+      "v": 126,
+      "layer": "rail"
+    },
+    {
+      "u": 66,
+      "v": 75,
+      "layer": "rail"
+    },
+    {
+      "u": 85,
+      "v": 125,
+      "layer": "rail"
+    },
+    {
+      "u": 105,
+      "v": 128,
+      "layer": "rail"
+    },
+    {
+      "u": 43,
+      "v": 98,
+      "layer": "rail"
+    },
+    {
+      "u": 20,
+      "v": 41,
+      "layer": "rail"
+    },
+    {
+      "u": 15,
+      "v": 127,
+      "layer": "rail"
+    },
+    {
+      "u": 4,
+      "v": 136,
+      "layer": "rail"
+    },
+    {
+      "u": 14,
+      "v": 67,
+      "layer": "rail"
+    },
+    {
+      "u": 33,
+      "v": 135,
+      "layer": "rail"
+    },
+    {
+      "u": 75,
+      "v": 89,
+      "layer": "rail"
+    },
+    {
+      "u": 26,
+      "v": 84,
+      "layer": "rail"
+    },
+    {
+      "u": 72,
+      "v": 136,
+      "layer": "rail"
+    },
+    {
+      "u": 147,
+      "v": 148,
+      "layer": "rail"
+    },
+    {
+      "u": 3,
+      "v": 155,
+      "layer": "rail"
+    },
+    {
+      "u": 15,
+      "v": 120,
+      "layer": "rail"
+    },
+    {
+      "u": 148,
+      "v": 155,
+      "layer": "rail"
+    },
+    {
+      "u": 49,
+      "v": 152,
+      "layer": "rail"
+    },
+    {
+      "u": 40,
+      "v": 149,
+      "layer": "rail"
+    },
+    {
+      "u": 42,
+      "v": 113,
+      "layer": "rail"
+    },
+    {
+      "u": 14,
+      "v": 42,
+      "layer": "rail"
+    },
+    {
+      "u": 58,
+      "v": 109,
+      "layer": "rail"
+    },
+    {
+      "u": 32,
+      "v": 90,
+      "layer": "rail"
+    },
+    {
+      "u": 38,
+      "v": 76,
+      "layer": "rail"
+    },
+    {
+      "u": 44,
+      "v": 119,
+      "layer": "rail"
+    },
+    {
+      "u": 27,
+      "v": 48,
+      "layer": "rail"
+    },
+    {
+      "u": 107,
+      "v": 157,
+      "layer": "rail"
+    },
+    {
+      "u": 36,
+      "v": 60,
+      "layer": "rail"
+    },
+    {
+      "u": 122,
+      "v": 130,
+      "layer": "rail"
+    },
+    {
+      "u": 1,
+      "v": 5,
+      "layer": "rail"
+    },
+    {
+      "u": 119,
+      "v": 140,
+      "layer": "rail"
+    },
+    {
+      "u": 31,
+      "v": 82,
+      "layer": "rail"
+    },
+    {
+      "u": 34,
+      "v": 81,
+      "layer": "rail"
+    },
+    {
+      "u": 29,
+      "v": 39,
+      "layer": "rail"
+    },
+    {
+      "u": 1,
+      "v": 87,
+      "layer": "rail"
+    },
+    {
+      "u": 64,
+      "v": 125,
+      "layer": "rail"
+    },
+    {
+      "u": 63,
+      "v": 135,
+      "layer": "rail"
+    },
+    {
+      "u": 50,
+      "v": 144,
+      "layer": "rail"
+    },
+    {
+      "u": 32,
+      "v": 83,
+      "layer": "rail"
+    },
+    {
+      "u": 6,
+      "v": 128,
+      "layer": "rail"
+    },
+    {
+      "u": 82,
+      "v": 96,
+      "layer": "rail"
+    },
+    {
+      "u": 5,
+      "v": 20,
+      "layer": "rail"
+    },
+    {
+      "u": 11,
+      "v": 118,
+      "layer": "rail"
+    },
+    {
+      "u": 82,
+      "v": 114,
+      "layer": "rail"
+    },
+    {
+      "u": 79,
+      "v": 106,
+      "layer": "rail"
+    },
+    {
+      "u": 2,
+      "v": 124,
+      "layer": "rail"
+    },
+    {
+      "u": 10,
+      "v": 19,
+      "layer": "rail"
+    },
+    {
+      "u": 12,
+      "v": 80,
+      "layer": "rail"
+    },
+    {
+      "u": 1,
+      "v": 89,
+      "layer": "rail"
+    },
+    {
+      "u": 74,
+      "v": 137,
+      "layer": "rail"
+    },
+    {
+      "u": 3,
+      "v": 150,
+      "layer": "rail"
+    },
+    {
+      "u": 4,
+      "v": 115,
+      "layer": "rail"
+    },
+    {
+      "u": 25,
+      "v": 28,
+      "layer": "rail"
+    },
+    {
+      "u": 50,
+      "v": 91,
+      "layer": "rail"
+    },
+    {
+      "u": 51,
+      "v": 56,
+      "layer": "rail"
+    },
+    {
+      "u": 90,
+      "v": 127,
+      "layer": "rail"
+    },
+    {
+      "u": 143,
+      "v": 148,
+      "layer": "rail"
+    },
+    {
+      "u": 70,
+      "v": 87,
+      "layer": "rail"
+    },
+    {
+      "u": 9,
+      "v": 68,
+      "layer": "rail"
+    },
+    {
+      "u": 9,
+      "v": 77,
+      "layer": "rail"
+    },
+    {
+      "u": 21,
+      "v": 42,
+      "layer": "rail"
+    },
+    {
+      "u": 31,
+      "v": 141,
+      "layer": "rail"
+    },
+    {
+      "u": 3,
+      "v": 134,
+      "layer": "rail"
+    },
+    {
+      "u": 14,
+      "v": 30,
+      "layer": "rail"
+    },
+    {
+      "u": 21,
+      "v": 78,
+      "layer": "rail"
+    },
+    {
+      "u": 15,
+      "v": 62,
+      "layer": "rail"
+    },
+    {
+      "u": 8,
+      "v": 23,
+      "layer": "rail"
+    },
+    {
+      "u": 30,
+      "v": 154,
+      "layer": "rail"
+    },
+    {
+      "u": 72,
+      "v": 99,
+      "layer": "rail"
+    },
+    {
+      "u": 8,
+      "v": 105,
+      "layer": "rail"
+    },
+    {
+      "u": 20,
+      "v": 24,
+      "layer": "rail"
+    },
+    {
+      "u": 10,
+      "v": 23,
+      "layer": "rail"
+    },
+    {
+      "u": 1,
+      "v": 20,
+      "layer": "rail"
+    },
+    {
+      "u": 23,
+      "v": 59,
+      "layer": "rail"
+    },
+    {
+      "u": 33,
+      "v": 36,
+      "layer": "rail"
+    },
+    {
+      "u": 85,
+      "v": 138,
+      "layer": "rail"
+    },
+    {
+      "u": 115,
+      "v": 151,
+      "layer": "rail"
+    },
+    {
+      "u": 142,
+      "v": 153,
+      "layer": "rail"
+    },
+    {
+      "u": 88,
+      "v": 152,
+      "layer": "rail"
+    },
+    {
+      "u": 46,
+      "v": 146,
+      "layer": "rail"
+    },
+    {
+      "u": 50,
+      "v": 52,
+      "layer": "rail"
+    },
+    {
+      "u": 102,
+      "v": 132,
+      "layer": "rail"
+    },
+    {
+      "u": 4,
+      "v": 94,
+      "layer": "rail"
+    },
+    {
+      "u": 13,
+      "v": 42,
+      "layer": "rail"
+    },
+    {
+      "u": 29,
+      "v": 102,
+      "layer": "rail"
+    },
+    {
+      "u": 30,
+      "v": 67,
+      "layer": "rail"
+    },
+    {
+      "u": 69,
+      "v": 83,
+      "layer": "rail"
+    },
+    {
+      "u": 3,
+      "v": 147,
+      "layer": "rail"
+    },
+    {
+      "u": 31,
+      "v": 87,
+      "layer": "ferry"
+    },
+    {
+      "u": 1,
+      "v": 87,
+      "layer": "ferry"
+    },
+    {
+      "u": 16,
+      "v": 126,
+      "layer": "ferry"
+    },
+    {
+      "u": 73,
+      "v": 144,
+      "layer": "ferry"
+    },
+    {
+      "u": 4,
+      "v": 133,
+      "layer": "flight"
+    },
+    {
+      "u": 62,
+      "v": 75,
+      "layer": "flight"
+    },
+    {
+      "u": 75,
+      "v": 133,
+      "layer": "flight"
+    },
+    {
+      "u": 6,
+      "v": 133,
+      "layer": "flight"
+    },
+    {
+      "u": 37,
+      "v": 75,
+      "layer": "flight"
+    },
+    {
+      "u": 4,
+      "v": 75,
+      "layer": "flight"
+    },
+    {
+      "u": 66,
+      "v": 75,
+      "layer": "flight"
+    },
+    {
+      "u": 75,
+      "v": 125,
+      "layer": "flight"
+    },
+    {
+      "u": 4,
+      "v": 125,
+      "layer": "flight"
+    }
+  ],
+  "basemap": "basemap.geojson",
+  "bbox": [
+    7.244020000000001,
+    15.70664,
+    53.66483,
+    58.72093
+  ]
+}
