@@ -58,7 +58,7 @@ function make_cfg(model, family;
                   init_kind = "Center patch", patch_r = 2,
                   time_model = "Continuous", target_time = 10.0,
                   stop_escape = false, seed = 1,
-                  country = "norway_mock", country_edges = Symbol[])
+                  country = "norway", country_edges = Symbol[])
     (model = model, graph_family = family,
      gsize = gsize_for(family), mparams = mparams_for(model),
      init_kind = init_kind, patch_r = patch_r,

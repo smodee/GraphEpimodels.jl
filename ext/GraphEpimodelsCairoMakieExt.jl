@@ -36,15 +36,33 @@ function _node_colors(scheme::Symbol, states_raw::Vector{Int8};
 end
 
 # =============================================================================
+# Theme (light / dark)
+# =============================================================================
+#
+# A visualizer's `dark` flag selects a background + foreground (title text, basemap,
+# grid/boundary lines, node outlines) palette. Node *state* colors come from the
+# color scheme and are left unchanged — they read on either background.
+
+"""Background + foreground colors for the light/dark theme."""
+_theme(dark::Bool) = dark ?
+    (bg = RGBf(0.13, 0.13, 0.15), fg = RGBf(0.92, 0.92, 0.94)) :
+    (bg = RGBf(1.0, 1.0, 1.0),    fg = RGBf(0.0, 0.0, 0.0))
+
+"""Figure/axis background for a theme, honoring a transparent override."""
+_bg_color(dark::Bool, transparent::Bool) = transparent ? :transparent : _theme(dark).bg
+
+# =============================================================================
 # Lattice rendering
 # =============================================================================
 
 """Create a clean figure + axis (equal aspect, no decorations)."""
 function _make_axis(figure_size::Tuple{Int,Int}; title::String = "",
-                    transparent_background::Bool = false)
-    bg = transparent_background ? :transparent : :white
+                    transparent_background::Bool = false, dark::Bool = false)
+    bg = _bg_color(dark, transparent_background)
+    fg = _theme(dark).fg
     fig = Figure(size = figure_size, backgroundcolor = bg)
-    ax = Axis(fig[1, 1]; title = title, aspect = DataAspect(), backgroundcolor = bg)
+    ax = Axis(fig[1, 1]; title = title, titlecolor = fg, aspect = DataAspect(),
+              backgroundcolor = bg)
     hidedecorations!(ax)
     hidespines!(ax)
     return fig, ax
@@ -54,15 +72,17 @@ end
 function _lattice_axis(viz::LatticeVisualizer; title::String = "",
                        transparent_background::Bool = false)
     return _make_axis(viz.figure_size; title = title,
-                      transparent_background = transparent_background)
+                      transparent_background = transparent_background, dark = viz.dark)
 end
 
 """Create a clean figure + 3D axis (equal aspect, no decorations) for node-link frames."""
 function _make_axis3(figure_size::Tuple{Int,Int}; title::String = "",
-                     transparent_background::Bool = false)
-    bg = transparent_background ? :transparent : :white
+                     transparent_background::Bool = false, dark::Bool = false)
+    bg = _bg_color(dark, transparent_background)
+    fg = _theme(dark).fg
     fig = Figure(size = figure_size, backgroundcolor = bg)
-    ax = Axis3(fig[1, 1]; title = title, aspect = :data, backgroundcolor = bg)
+    ax = Axis3(fig[1, 1]; title = title, titlecolor = fg, aspect = :data,
+               backgroundcolor = bg)
     hidedecorations!(ax)
     return fig, ax
 end
@@ -129,7 +149,8 @@ function _draw_lattice!(ax, viz::LatticeVisualizer, lattice::SquareLattice,
     end
 
     if viz.show_boundary && has_boundary(lattice)
-        _draw_boundary_box!(ax, 0.5, width + 0.5, 0.5, height + 0.5)
+        _draw_boundary_box!(ax, 0.5, width + 0.5, 0.5, height + 0.5;
+                            color = viz.dark ? _theme(true).fg : :black)
     end
     return ax
 end
@@ -149,15 +170,16 @@ function _draw_lattice!(ax, viz::LatticeVisualizer, lattice::AbstractLatticeGrap
         pos = node_positions(lattice)
         xmin, xmax = extrema(@view pos[1, :])
         ymin, ymax = extrema(@view pos[2, :])
-        _draw_boundary_box!(ax, xmin - 0.6, xmax + 0.6, ymin - 0.6, ymax + 0.6)
+        _draw_boundary_box!(ax, xmin - 0.6, xmax + 0.6, ymin - 0.6, ymax + 0.6;
+                            color = viz.dark ? _theme(true).fg : :black)
     end
     return ax
 end
 
 """Stroke a rectangle outline (boundary emphasis)."""
-function _draw_boundary_box!(ax, xlo, xhi, ylo, yhi)
+function _draw_boundary_box!(ax, xlo, xhi, ylo, yhi; color = :black)
     lines!(ax, [xlo, xhi, xhi, xlo, xlo], [ylo, ylo, yhi, yhi, ylo];
-           color = :black, linewidth = 2)
+           color = color, linewidth = 2)
 end
 
 function GraphEpimodels.visualize_state(viz::LatticeVisualizer, process::AbstractEpidemicProcess;
@@ -192,6 +214,7 @@ ignored for node-link graphs.
   layout (`CubeLattice`), 2D otherwise. `dim = 3` forces 3D — an intrinsic 3D layout
   where available (cube / star / complete / tree), else a 3D force-directed layout.
   Cell lattices (square / triangular / hexagonal) render in 2D only.
+- `dark::Bool`: Dark theme — dark background with light title/outlines (default: false).
 """
 function GraphEpimodels.save_plot(process::AbstractEpidemicProcess, filename::String;
                                           color_scheme::Union{Symbol, Nothing} = nothing,
@@ -199,11 +222,13 @@ function GraphEpimodels.save_plot(process::AbstractEpidemicProcess, filename::St
                                           transparent_background::Bool = false,
                                           show_boundary::Bool = false,
                                           show_grid::Bool = false,
-                                          dim::Union{Int, Nothing} = nothing)
+                                          dim::Union{Int, Nothing} = nothing,
+                                          dark::Bool = false)
     scheme = color_scheme === nothing ? default_color_scheme(process) : color_scheme
     graph = get_graph(process)
     viz = _prepare_visualizer(graph, scheme, figure_size;
-                              dim = dim, show_boundary = show_boundary, show_grid = show_grid)
+                              dim = dim, show_boundary = show_boundary, show_grid = show_grid,
+                              dark = dark)
     fig = viz isa LatticeVisualizer ?
         visualize_state(viz, process; transparent_background = transparent_background) :
         visualize_state(viz, process)
@@ -231,8 +256,10 @@ for node-link graphs, and apply the lattice cell options. Shared by `save_plot`
 and `animate_recording` so the visualizer/dimension resolution lives in one place.
 """
 function _prepare_visualizer(graph, scheme::Symbol, figure_size::Tuple{Int, Int};
-                             dim::Union{Int, Nothing}, show_boundary::Bool, show_grid::Bool)
+                             dim::Union{Int, Nothing}, show_boundary::Bool, show_grid::Bool,
+                             dark::Bool = false)
     viz = visualizer_for(graph; color_scheme = scheme, figure_size = figure_size)
+    viz.dark = dark
     if viz isa LatticeVisualizer
         something(dim, 2) == 2 || throw(ArgumentError(
             "$(typeof(graph)) renders in 2D only (got dim=$dim); cell lattices have no 3D layout"))
@@ -293,12 +320,16 @@ end
 
 """Create a node-link axis: 2D `Axis` (equal aspect) or 3D `Axis3` per `viz.dim`."""
 function _network_axis(fig, viz::NetworkVisualizer; title::String = "")
+    bg = _theme(viz.dark).bg
+    fg = _theme(viz.dark).fg
     if viz.dim == 3
-        ax = Axis3(fig[1, 1]; title = title, aspect = :data)
+        ax = Axis3(fig[1, 1]; title = title, titlecolor = fg, aspect = :data,
+                   backgroundcolor = bg)
         hidedecorations!(ax)
         return ax
     end
-    ax = Axis(fig[1, 1]; title = title, aspect = DataAspect())
+    ax = Axis(fig[1, 1]; title = title, titlecolor = fg, aspect = DataAspect(),
+              backgroundcolor = bg)
     hidedecorations!(ax)
     hidespines!(ax)
     return ax
@@ -323,12 +354,12 @@ function _draw_network!(ax, viz::NetworkVisualizer, graph::AbstractEpidemicGraph
             push!(segs, pts[i])
             push!(segs, pts[j])
         end
-        isempty(segs) || linesegments!(ax, segs; color = viz.edge_color)
+        isempty(segs) || linesegments!(ax, segs; color = viz.edge_color, linewidth = viz.edge_width)
     end
 
     colors = _node_colors(viz.color_scheme, states_raw)
     scatter!(ax, pts; color = colors, markersize = viz.node_size,
-             strokewidth = 0.5, strokecolor = :black)
+             strokewidth = 0.5, strokecolor = viz.dark ? (:white, 0.5) : :black)
     return ax
 end
 
@@ -355,9 +386,11 @@ end
 
 """A clean (decoration-free) 2D axis with the geographic aspect for a basemap."""
 function _geo_axis(fig, bm::GraphEpimodels.Basemap; title::String = "",
-                   transparent_background::Bool = false)
-    bg = transparent_background ? :transparent : :white
-    ax = Axis(fig[1, 1]; title = title, aspect = _geo_aspect(bm.bbox), backgroundcolor = bg)
+                   transparent_background::Bool = false, dark::Bool = false)
+    bg = _bg_color(dark, transparent_background)
+    fg = _theme(dark).fg
+    ax = Axis(fig[1, 1]; title = title, titlecolor = fg, aspect = _geo_aspect(bm.bbox),
+              backgroundcolor = bg)
     hidedecorations!(ax)
     hidespines!(ax)
     return ax
@@ -424,8 +457,9 @@ function _load_basemap_rings(bm::GraphEpimodels.Basemap)::Vector{Vector{Point2f}
 end
 
 """Draw basemap rings (filled land + coastline stroke) into an axis."""
-function _draw_basemap!(ax, rings::Vector{Vector{Point2f}};
-                        fill = (:gray, 0.08), stroke = (:gray, 0.55), strokewidth = 0.8)
+function _draw_basemap!(ax, rings::Vector{Vector{Point2f}}; dark::Bool = false,
+                        fill = dark ? (:white, 0.06) : (:gray, 0.08),
+                        stroke = dark ? (:white, 0.45) : (:gray, 0.55), strokewidth = 0.8)
     for ring in rings
         if length(ring) >= 3
             poly!(ax, ring; color = fill, strokecolor = stroke, strokewidth = strokewidth)
@@ -445,11 +479,11 @@ _is_geographic(viz, graph) = viz isa NetworkVisualizer && viz.dim == 2 && has_ba
 function GraphEpimodels.render_frame(viz::NetworkVisualizer, graph::AbstractEpidemicGraph,
                                      states_raw::Vector{Int8}; title::String = "",
                                      positions::Union{Matrix{Float64}, Nothing} = nothing)
-    fig = Figure(size = viz.figure_size)
+    fig = Figure(size = viz.figure_size, backgroundcolor = _theme(viz.dark).bg)
     if _is_geographic(viz, graph)
         bm = basemap(graph)
-        ax = _geo_axis(fig, bm; title = title)
-        _draw_basemap!(ax, _load_basemap_rings(bm))
+        ax = _geo_axis(fig, bm; title = title, dark = viz.dark)
+        _draw_basemap!(ax, _load_basemap_rings(bm); dark = viz.dark)
         _draw_network!(ax, viz, graph, states_raw; positions = positions)
         _apply_geo_limits!(ax, bm)
     else
@@ -529,6 +563,8 @@ node-link diagram.
   render in 2D only.
 - `turntable::Bool`: For 3D animations, slowly rotate the camera one full turn over
   the clip (default: false). No effect in 2D.
+- `dark::Bool`: Dark theme — dark background with light title/outlines (default: false).
+  Ignored when an explicit `visualizer` is supplied (it carries its own `dark`).
 - `visualizer::Union{AbstractVisualizer, Nothing}`: Override the auto-selected
   visualizer (default: `nothing` → chosen by graph type).
 
@@ -546,12 +582,14 @@ function GraphEpimodels.animate_recording(rec::SimulationRecording;
                                           transparent_background::Bool = false,
                                           dim::Union{Int, Nothing} = nothing,
                                           turntable::Bool = false,
+                                          dark::Bool = false,
                                           visualizer::Union{AbstractVisualizer, Nothing} = nothing)
     graph = rec.graph
     if visualizer === nothing
         scheme = color_scheme === nothing ? default_color_scheme(rec.process_name) : color_scheme
         viz = _prepare_visualizer(graph, scheme, figure_size;
-                                  dim = dim, show_boundary = show_boundary, show_grid = show_grid)
+                                  dim = dim, show_boundary = show_boundary, show_grid = show_grid,
+                                  dark = dark)
     else
         # An explicitly supplied visualizer carries its own dim; still honor the
         # call's lattice cell options.
@@ -578,18 +616,19 @@ function GraphEpimodels.animate_recording(rec::SimulationRecording;
     title0 = show_title ? _frame_title(rec, 1) : ""
     if is3d
         fig, ax = _make_axis3(figure_size; title = title0,
-                              transparent_background = transparent_background)
+                              transparent_background = transparent_background, dark = viz.dark)
         _apply_limits3!(ax, positions)
         base_azimuth = ax.azimuth[]
     elseif geo
         fig = Figure(size = figure_size,
-                     backgroundcolor = transparent_background ? :transparent : :white)
-        ax = _geo_axis(fig, bm; title = title0, transparent_background = transparent_background)
+                     backgroundcolor = _bg_color(viz.dark, transparent_background))
+        ax = _geo_axis(fig, bm; title = title0,
+                       transparent_background = transparent_background, dark = viz.dark)
         _apply_geo_limits!(ax, bm)
         base_azimuth = 0.0
     else
         fig, ax = _make_axis(figure_size; title = title0,
-                             transparent_background = transparent_background)
+                             transparent_background = transparent_background, dark = viz.dark)
         xlo, xhi, ylo, yhi = _frame_limits(positions)
         limits!(ax, xlo, xhi, ylo, yhi)
         base_azimuth = 0.0
@@ -608,7 +647,7 @@ function GraphEpimodels.animate_recording(rec::SimulationRecording;
                 ax.azimuth[] = base_azimuth + 2π * (idx - 1) / n
             end
         elseif geo
-            _draw_basemap!(ax, basemap_rings)   # redraw backdrop under the new frame
+            _draw_basemap!(ax, basemap_rings; dark = viz.dark)   # redraw backdrop under the new frame
             _apply_geo_limits!(ax, bm)          # re-assert limits after empty!
         end
         _draw_frame!(ax, viz, graph, rec.frames[idx];
@@ -651,6 +690,7 @@ function GraphEpimodels.animate_simulation(process::AbstractEpidemicProcess;
                                            transparent_background::Bool = false,
                                            dim::Union{Int, Nothing} = nothing,
                                            turntable::Bool = false,
+                                           dark::Bool = false,
                                            visualizer::Union{AbstractVisualizer, Nothing} = nothing)::SimulationRecording
     rec = record_simulation(process;
                             sampler = sampler,
@@ -669,6 +709,7 @@ function GraphEpimodels.animate_simulation(process::AbstractEpidemicProcess;
                       transparent_background = transparent_background,
                       dim = dim,
                       turntable = turntable,
+                      dark = dark,
                       visualizer = visualizer)
 
     return rec
