@@ -66,19 +66,19 @@ ferries, flights), loaded from a data bundle. Wraps an `AdjacencyGraph` (built f
 the union of the selected layers) and adds names, populations, `[lon, lat]`
 coordinates and a map backdrop — so simulations run on it exactly as on any other
 graph, and visualizations draw it on a basemap. The package ships one example
-country, `:norway_mock` — a small hand-authored placeholder (15 settlements) until
-the data builder (see below) produces real bundles.
+country, `:norway` — 114 settlements with road / rail / ferry / flight layers,
+produced by the data builder (see below) from OpenStreetMap / GeoNames / OpenFlights.
 
 | Constructor / function | Description |
 |------------------------|-------------|
-| `load_geograph(name; edges)` | Load a bundle (e.g. `:norway_mock`); `edges` selects layers (`:all` or e.g. `[:road, :flight]`) |
+| `load_geograph(name; edges)` | Load a bundle (e.g. `:norway`); `edges` selects layers (`:all` or e.g. `[:road, :flight]`) |
 | `with_layers(g, layers)` | Re-select active edge layers (cheap; no re-read) |
 | `available_country_graphs()` | List bundles found in the data directory |
 | `country_edge_sets(name)` | The `(symbol, label)` layers a bundle offers |
 | `find_node(g, "Oslo")` | Node id of a settlement by name (e.g. for seeding) |
 
 ```julia
-g = load_geograph(:norway_mock; edges = [:road, :rail])
+g = load_geograph(:norway; edges = [:road, :rail])
 sir = create_sir_process(g, 3.0, 1.0; initial_infected = [find_node(g, "Oslo")])
 run_simulation(sir)
 ```

@@ -26,11 +26,9 @@ GraphEpimodels simulates epidemic processes (SIR, ZIM, etc.) on graphs. We want
 connections (roads, railways, ferries, flights). The example country is **Norway**,
 but the tool must be country-agnostic.
 
-The package ships one hand-authored mock of Norway (the bundle named
-`norway_mock`) so the Julia features work today; this tool **replaces the mock with
-real, reproducible data** and lets users generate their own countries. The real
-output of this tool would be the bundle `norway` (no `_mock` suffix), which simply
-sits alongside or supersedes the placeholder.
+The package ships one example bundle, `norway`, produced by this tool from real,
+reproducible open data; the tool lets users generate their own countries the same
+way. (An earlier hand-authored `norway_mock` placeholder has since been retired.)
 
 ### What "good output" looks like
 

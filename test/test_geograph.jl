@@ -36,8 +36,9 @@ using Random
     # Registry / discovery
     # -------------------------------------------------------------------------
     @testset "registry" begin
-        @test "norway_mock" in available_country_graphs()
-        sets = country_edge_sets(:norway_mock)
+        @test "norway" in available_country_graphs()
+        @test !("norway_mock" in available_country_graphs())   # mock retired
+        sets = country_edge_sets(:norway)
         @test sets == [(:road, "Roads"), (:rail, "Railways"),
                        (:ferry, "Ferries"), (:flight, "Flights")]
         @test_throws ArgumentError country_edge_sets(:atlantis)
@@ -47,23 +48,24 @@ using Random
     # Loading + node table
     # -------------------------------------------------------------------------
     @testset "load + nodes" begin
-        g = load_geograph(:norway_mock)
+        g = load_geograph(:norway)
         @test g isa GeoGraph
-        @test num_nodes(g) == 15
+        @test num_nodes(g) == 114
 
-        # Names + populations + name lookup (case-insensitive).
+        # Names + populations + name lookup (case-insensitive, Unicode-aware).
         @test node_name(g, 1) == "Oslo"
-        @test node_population(g, 1) == 700000
+        @test node_population(g, 1) == 1_082_575
         @test find_node(g, "oslo") == 1
-        @test find_node(g, "TROMSO") == 5
+        @test find_node(g, "BERGEN") == 2         # case-insensitive (ASCII)
+        @test find_node(g, "tromsø") == 17        # case-insensitive Unicode name
         @test find_node(g, "nowhere") === nothing
         @test largest_settlement(g) == 1          # Oslo is most populous
 
         # Geometry: geographic coordinates are a 2D layout.
         @test supported_layout_dims(g) == (2,)
         @test layout_dim(g) == 2
-        @test size(node_positions(g)) == (2, 15)
-        @test node_positions(g)[:, 1] ≈ [10.7522, 59.9139]
+        @test size(node_positions(g)) == (2, 114)
+        @test node_positions(g)[:, 1] ≈ [10.74609, 59.91273]
         @test_throws ArgumentError node_positions(g; dim = 3)
 
         # Basemap handle present and resolvable.
@@ -71,39 +73,41 @@ using Random
         bm = basemap(g)
         @test bm isa Basemap
         @test isfile(bm.path)
-        @test bm.bbox == (4.0, 24.5, 57.5, 71.5)
+        @test all(bm.bbox .≈ (4.0328, 24.68092, 57.0274, 71.66313))
     end
 
     # -------------------------------------------------------------------------
     # Edge layers + selection
     # -------------------------------------------------------------------------
     @testset "layers" begin
-        g = load_geograph(:norway_mock)
+        g = load_geograph(:norway)
         @test available_layers(g) == [:road, :rail, :ferry, :flight]
         @test active_layers(g) == [:road, :rail, :ferry, :flight]   # :all by default
         @test layer_label(g, :rail) == "Railways"
 
-        # Single-layer subsets have exactly that layer's edge count (no dups within
-        # a layer); the union is smaller than the naive sum (shared edges collapse).
-        @test num_edges(with_layers(g, [:road])) == 16
-        @test num_edges(with_layers(g, [:rail])) == 10
-        @test num_edges(with_layers(g, [:ferry])) == 6
-        @test num_edges(with_layers(g, [:flight])) == 15
-        @test num_edges(g) < 16 + 10 + 6 + 15                       # dedup across layers
+        # Single-layer subsets have exactly that layer's (deduped) edge count; the
+        # union is smaller than the naive sum (edges shared across layers collapse).
+        @test num_edges(with_layers(g, [:road]))   == 151
+        @test num_edges(with_layers(g, [:rail]))   == 107
+        @test num_edges(with_layers(g, [:ferry]))  == 29
+        @test num_edges(with_layers(g, [:flight])) == 81
+        @test num_edges(g) == 287                                   # union of all layers
+        @test num_edges(g) < 151 + 107 + 29 + 81                   # dedup across layers
 
-        # Rail-only leaves the non-rail towns isolated (e.g. Tromsø).
+        # Rail-only is sparse: some towns end up isolated, but Oslo (a rail hub) stays
+        # connected.
         gr = with_layers(g, [:rail])
         @test active_layers(gr) == [:rail]
-        @test get_node_degree(gr, find_node(g, "Tromso")) == 0
+        @test any(get_node_degree(gr, i) == 0 for i in 1:num_nodes(gr))
         @test get_node_degree(gr, 1) > 0                            # Oslo still connected
 
         # Selection is normalized to declared order, regardless of request order,
         # and accepts strings.
-        @test active_layers(load_geograph(:norway_mock; edges = [:flight, :road])) == [:road, :flight]
+        @test active_layers(load_geograph(:norway; edges = [:flight, :road])) == [:road, :flight]
         @test active_layers(with_layers(g, ["ferry", "road"])) == [:road, :ferry]
 
         @test_throws ArgumentError with_layers(g, [:metro])
-        @test_throws ArgumentError load_geograph(:norway_mock; edges = [:metro])
+        @test_throws ArgumentError load_geograph(:norway; edges = [:metro])
         @test_throws ArgumentError load_geograph(:atlantis)
     end
 
@@ -111,7 +115,7 @@ using Random
     # Simulations run on a GeoGraph exactly like any other graph
     # -------------------------------------------------------------------------
     @testset "simulation" begin
-        g = load_geograph(:norway_mock)
+        g = load_geograph(:norway)
         sir = create_sir_process(g, 3.0, 1.0;
                                  initial_infected = [find_node(g, "Oslo")], rng_seed = 1)
         run_simulation(sir; max_steps = 10_000)
@@ -119,22 +123,22 @@ using Random
         @test count_states(g)[SUSCEPTIBLE] < num_nodes(g)
 
         # ZIM also constructs + runs.
-        zim = create_zim_process(load_geograph(:norway_mock), 2.0;
+        zim = create_zim_process(load_geograph(:norway), 2.0;
                                  initial_infected = [1], rng_seed = 2)
-        @test num_nodes(get_graph(zim)) == 15
+        @test num_nodes(get_graph(zim)) == 114
     end
 
     # -------------------------------------------------------------------------
     # Persistence identity (country + active layers)
     # -------------------------------------------------------------------------
     @testset "persistence identity" begin
-        g = load_geograph(:norway_mock; edges = [:road, :flight])
+        g = load_geograph(:norway; edges = [:road, :flight])
         sir = create_sir_process(g, 3.0, 1.0; initial_infected = [1], rng_seed = 1)
         info = extract_process_info(sir)
         @test info["graph_type"] == "GeoGraph"
-        @test info["country"] == "norway_mock"
+        @test info["country"] == "norway"
         @test info["edges"] == "flight+road"     # sorted for a stable key
-        @test info["num_nodes"] == 15
+        @test info["num_nodes"] == 114
     end
 
     # -------------------------------------------------------------------------
@@ -146,7 +150,7 @@ using Random
         using CairoMakie
         @testset "rendering (CairoMakie)" begin
             dir = mktempdir()
-            g = load_geograph(:norway_mock)
+            g = load_geograph(:norway)
 
             # Auto-selected visualizer is the node-link one (a geograph is not a
             # cell graph), and render_frame draws the basemap behind it.
@@ -154,13 +158,16 @@ using Random
             fig = render_frame(visualizer_for(g), g, node_states_raw(g))
             @test fig isa Figure
 
+            # Dark theme renders too (geo basemap path).
+            @test render_frame(visualizer_for(g; dark = true), g, node_states_raw(g)) isa Figure
+
             proc = create_sir_process(g, 3.0, 1.0; initial_infected = [1], rng_seed = 1)
-            png = joinpath(dir, "norway_mock.png")
+            png = joinpath(dir, "norway.png")
             save_plot(proc, png)
             @test isfile(png) && filesize(png) > 0
 
-            gif = joinpath(dir, "norway_mock.gif")
-            rec = animate_simulation(create_sir_process(load_geograph(:norway_mock), 3.0, 1.0;
+            gif = joinpath(dir, "norway.gif")
+            rec = animate_simulation(create_sir_process(load_geograph(:norway), 3.0, 1.0;
                                                         initial_infected = [1], rng_seed = 1);
                                      sampler = EveryStep(), max_steps = 20, filename = gif)
             @test rec isa SimulationRecording

@@ -1,9 +1,9 @@
 {
   "tool_version": "0.1.0",
-  "built_at": "2026-06-21T17:47:27.061772+00:00",
+  "built_at": "2026-06-30T14:27:16.527743+00:00",
   "parameters": {
     "country": "NO",
-    "slug": "no",
+    "slug": "norway",
     "display_name": "Norway",
     "min_population": 5000,
     "layers": [
@@ -19,27 +19,27 @@
   "sources": {
     "geonames": {
       "url": "https://download.geonames.org/export/dump/NO.zip",
-      "fetched_at": "2026-06-21T17:47:31.258204+00:00"
+      "fetched_at": "2026-06-30T14:27:18.341609+00:00"
     },
     "overpass_road": {
       "url": "https://overpass-api.de",
-      "fetched_at": "2026-06-21T17:48:08.516633+00:00"
+      "fetched_at": "2026-06-30T14:27:31.718581+00:00"
     },
     "overpass_rail": {
       "url": "https://overpass-api.de",
-      "fetched_at": "2026-06-21T17:48:13.584005+00:00"
+      "fetched_at": "2026-06-30T14:27:33.381101+00:00"
     },
     "overpass_ferry": {
       "url": "https://overpass-api.de",
-      "fetched_at": "2026-06-21T17:48:13.789353+00:00"
+      "fetched_at": "2026-06-30T14:27:33.459996+00:00"
     },
     "openflights": {
       "url": "https://github.com/jpatokal/openflights",
-      "fetched_at": "2026-06-21T17:48:14.159386+00:00"
+      "fetched_at": "2026-06-30T14:27:33.547695+00:00"
     },
     "natural_earth": {
       "url": "https://naciscdn.org/naturalearth/50m/cultural/ne_50m_admin_0_countries.zip",
-      "fetched_at": "2026-06-21T17:48:14.869518+00:00"
+      "fetched_at": "2026-06-30T14:27:33.739003+00:00"
     }
   },
   "stats": {

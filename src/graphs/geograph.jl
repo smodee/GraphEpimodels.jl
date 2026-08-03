@@ -4,7 +4,7 @@ Geographic graph type — real-world settlements connected by multi-modal transp
 `GeoGraph` is the package's type for graphs that live on a map: nodes are
 settlements (with names, populations and `[lon, lat]` coordinates) and edges come
 in *labeled layers* — e.g. roads, railways, ferries, flights. The example data
-shipped with the package is a country (`:norway_mock`), hence the "country graph" name
+shipped with the package is a country (`:norway`), hence the "country graph" name
 in the explorer UI, but the type itself is general (a region, a metro, …).
 
 Like [`ErdosRenyiGraph`](@ref), `GeoGraph` is a thin wrapper: it stores an inner
@@ -33,7 +33,7 @@ A geographic graph: settlements (nodes) connected by labeled transport layers.
 # Fields
 - `graph::AdjacencyGraph`: Inner storage — the union of the active layers, with
   `[lon, lat]` coordinates attached. Provides the full simulation interface.
-- `name::Symbol`: Stable identifier (e.g. `:norway_mock`), used for the data folder and
+- `name::Symbol`: Stable identifier (e.g. `:norway`), used for the data folder and
   for the persistence config string.
 - `display_name::String`: Human-readable name (e.g. `"Norway"`).
 - `node_names::Vector{String}`: Settlement name per node id.
@@ -175,7 +175,7 @@ susceptible (a fresh graph). `layers` may be given as `Symbol`s or `String`s, or
 `:all` for every available layer.
 
 ```julia
-g  = load_geograph(:norway_mock)              # all layers
+g  = load_geograph(:norway)              # all layers
 gr = with_layers(g, [:road, :rail])      # roads + railways only
 ```
 """
@@ -214,7 +214,7 @@ _bundle_path(name, dir::AbstractString)::String =
     joinpath(dir, string(name), "geograph.json")
 
 """
-Load a geographic graph bundle by `name` (e.g. `:norway_mock`).
+Load a geographic graph bundle by `name` (e.g. `:norway`).
 
 Reads the JSON bundle from `<dir>/<name>/geograph.json`, builds the node table and
 all edge layers, and returns a [`GeoGraph`](@ref) whose active layers are `edges`.
@@ -231,8 +231,8 @@ all edge layers, and returns a [`GeoGraph`](@ref) whose active layers are `edges
 
 # Example
 ```julia
-g  = load_geograph(:norway_mock)                       # all layers
-gr = load_geograph(:norway_mock; edges = [:road, :rail])
+g  = load_geograph(:norway)                       # all layers
+gr = load_geograph(:norway; edges = [:road, :rail])
 sir = create_sir_process(g, 3.0, 1.0; initial_infected = [find_node(g, "Oslo")])
 ```
 """

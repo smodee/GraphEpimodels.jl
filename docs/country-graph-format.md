@@ -24,13 +24,13 @@ One bundle = one directory, named after the graph, under a *countries directory*
 
 ```
 data/countries/
-└── norway_mock/
+└── norway/
     ├── geograph.json     # required — the graph bundle (see §2)
     └── basemap.geojson   # optional — geographic backdrop (see §3)
 ```
 
-- The directory name (`norway_mock`) is the bundle's **name**; it is what
-  `load_geograph(:norway_mock)` and the explorer dropdown use. Use a lowercase,
+- The directory name (`norway`) is the bundle's **name**; it is what
+  `load_geograph(:norway)` and the explorer dropdown use. Use a lowercase,
   ASCII, no-spaces slug.
 - A directory is "a bundle" iff it contains a `geograph.json`. `available_country_graphs()`
   discovers bundles by scanning for that file.
@@ -210,8 +210,8 @@ that easy later.
 }
 ```
 
-See [`data/countries/norway_mock/`](../data/countries/norway_mock/) for the shipped
-example (a hand-authored mock pending the builder — hence the `_mock` suffix).
+See [`data/countries/norway/`](../data/countries/norway/) for the shipped example
+(114 settlements, produced by the builder from OpenStreetMap / GeoNames / OpenFlights).
 
 ---
 
@@ -220,11 +220,11 @@ example (a hand-authored mock pending the builder — hence the `_mock` suffix).
 ```julia
 using GraphEpimodels
 
-available_country_graphs()          # ["norway_mock", ...]  — discovered bundles
-country_edge_sets(:norway_mock)     # [(:road,"Roads"), (:rail,"Railways"), ...]
+available_country_graphs()          # ["norway", ...]  — discovered bundles
+country_edge_sets(:norway)          # [(:road,"Roads"), (:rail,"Railways"), ...]
 
-g  = load_geograph(:norway_mock)                       # all layers active
-gr = load_geograph(:norway_mock; edges = [:road, :rail])
+g  = load_geograph(:norway)                       # all layers active
+gr = load_geograph(:norway; edges = [:road, :rail])
 gr = with_layers(g, [:flight])                    # re-select cheaply, no re-read
 
 # Then simulate exactly as on any other graph:
